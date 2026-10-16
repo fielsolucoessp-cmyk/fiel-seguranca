@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14213d">
+<title>FIEL Segurança Privada</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+:root{--navy:#14213d;--navy2:#1f3260;--or:#f28c28;--bg:#f4f6fa;--card:#fff;--tx:#1b2333;--mut:#6b7488;--bd:#dfe3ec;--ok:#1f9d55;--warn:#b26f00;--bad:#d93636}
+*{box-sizing:border-box}
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--tx);font-size:15px}
+a{color:var(--navy2)}
+header{background:var(--navy);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-weight:700;font-size:18px}.brand b{color:var(--or)}
+header small{opacity:.75;font-size:12px;display:block}
+header .usr{text-align:right;font-size:13px}
+header button{background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer;margin-top:4px}
+nav{background:var(--navy2);display:flex;overflow-x:auto;gap:2px;padding:0 8px;position:sticky;top:0;z-index:5}
+nav button{background:none;border:0;color:#cfd6e6;padding:12px 14px;font:inherit;font-weight:500;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent}
+nav button.on{color:#fff;border-bottom-color:var(--or)}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h2{margin:4px 0 14px;font-size:20px}h3{margin:0 0 12px;font-size:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;cursor:pointer}
+.kpi span{color:var(--mut);font-size:13px}.kpi b{display:block;font-size:26px;margin-top:4px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.bar .sp{flex:1}
+.btn{background:var(--or);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.sec{background:#e8ebf2;color:var(--tx)}.btn.nv{background:var(--navy)}.btn.dg{background:var(--bad)}.btn.ok{background:var(--ok)}
+.btn.wa{background:#1f9d55}.btn.sm{padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{font:inherit;padding:9px 10px;border:1px solid var(--bd);border-radius:8px;width:100%;background:#fff;color:var(--tx)}
+label.f{display:block;margin-bottom:10px}label.f span{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.fgrid .w{grid-column:1/-1}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--bd);vertical-align:middle}
+th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+.acoes .btn{margin:2px 0}
+tr.click{cursor:pointer}tr.click:hover{background:#f7f9fc}
+.bdg{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600;background:#e8ebf2;color:var(--mut);white-space:nowrap}
+.bdg.ok{background:#e1f4ea;color:var(--ok)}.bdg.warn{background:#fff1d6;color:var(--warn)}.bdg.bad{background:#fde4e4;color:var(--bad)}.bdg.nv{background:#e3e8f5;color:var(--navy2)}
+.aviso{padding:10px 12px;border-radius:8px;margin-bottom:10px;background:#fff8ea;border-left:4px solid var(--or);font-size:14px}
+.aviso.bad{background:#fdeeee;border-left-color:var(--bad)}.aviso.ok{background:#eaf7f0;border-left-color:var(--ok)}
+.muted{color:var(--mut)}.small{font-size:13px}
+.passos{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:14px}
+.passos div{background:#fff;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;font-size:13px}
+.passos b{color:var(--or);display:block;font-size:12px;text-transform:uppercase}
+.sol{border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:12px}
+.sol h4{margin:0 0 6px;font-size:15px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#modal{position:fixed;inset:0;background:rgba(10,18,40,.55);display:none;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;z-index:20}
+#modal.on{display:flex}
+.mbox{background:#fff;border-radius:14px;padding:20px;width:100%;max-width:620px}
+.mact{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;flex-wrap:wrap}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;display:flex;flex-direction:column;gap:6px;align-items:center}
+#toast div{background:var(--navy);color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.2);max-width:90vw}
+#toast div.erro{background:var(--bad)}
+.auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(160deg,var(--navy),var(--navy2))}
+.auth-box{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:440px}
+.auth-box .brand{color:var(--navy);font-size:22px}
+.tabs{display:flex;gap:4px;margin:16px 0;border-bottom:1px solid var(--bd)}
+.tabs button{flex:1;background:none;border:0;padding:10px 4px;font:inherit;font-weight:600;color:var(--mut);cursor:pointer;border-bottom:3px solid transparent}
+.tabs button.on{color:var(--navy);border-bottom-color:var(--or)}
+.radio{display:flex;gap:8px;margin-bottom:12px}
+.radio label{flex:1;border:1px solid var(--bd);border-radius:8px;padding:10px;text-align:center;cursor:pointer;font-weight:600}
+.radio input{display:none}.radio label.on{border-color:var(--or);background:#fff5ec;color:var(--navy)}
+.lgpd{font-size:12px;color:var(--mut);background:#f7f9fc;border-radius:8px;padding:10px;margin:6px 0 12px;max-height:120px;overflow:auto}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:12px}.chk input{width:auto;margin-top:3px}
+@media(max-width:640px){.fgrid{grid-template-columns:1fr}main{padding:12px}th,td{padding:8px 6px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal"></div>
+<div id="toast"></div>
+
+<script>
+/* ================= CONFIGURAÇÃO ================= */
+const CONFIG = {
+  SUPABASE_URL: 'COLE_AQUI_A_URL_DO_PROJETO',      // ex.: https://abcdefgh.supabase.co
+  SUPABASE_ANON_KEY: 'COLE_AQUI_A_CHAVE_ANON',     // Project Settings > API > anon public
+  ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
+};
+const VERSAO = '1.0.0';
+
+/* ================= UTILITÁRIOS ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const soDig = s => String(s || '').replace(/\D/g, '');
+function hojeISO(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function isoDe(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDias(iso, n){ const [a,m,d] = iso.split('-').map(Number); return isoDe(new Date(a, m-1, d+n)); }
+function addMeses(iso, n){ const [a,m,d] = iso.split('-').map(Number); return isoDe(new Date(a, m-1+n, d)); }
+function dias(iso){ if(!iso) return null; const [a,m,d] = iso.slice(0,10).split('-').map(Number); const t = new Date(a,m-1,d); const h = new Date(); h.setHours(0,0,0,0); return Math.round((t-h)/864e5); }
+function fmt(iso){ if(!iso) return '—'; const s = String(iso); if(s.length > 10){ const d = new Date(s); return d.toLocaleDateString('pt-BR'); } const [a,m,d] = s.split('-'); return d+'/'+m+'/'+a; }
+function fmtDoc(v){ const d = soDig(v); if(d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4'); if(d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5'); return v || '—'; }
+function cpfValido(v){
+  const c = soDig(v); if(c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  for(let t = 9; t < 11; t++){ let s = 0; for(let i = 0; i < t; i++) s += Number(c[i]) * (t+1-i); if(((s*10) % 11) % 10 !== Number(c[t])) return false; }
+  return true;
+}
+function cnpjValido(v){
+  const c = soDig(v); if(c.length !== 14 || /^(\d)\1+$/.test(c)) return false;
+  const calc = n => { let s = 0, p = n - 7; for(let i = 0; i < n; i++){ s += Number(c[i]) * p--; if(p < 2) p = 9; } const r = s % 11; return r < 2 ? 0 : 11 - r; };
+  return calc(12) === Number(c[12]) && calc(13) === Number(c[13]);
+}
+function toast(msg, tipo){ const d = document.createElement('div'); if(tipo) d.className = tipo; d.textContent = msg; $('#toast').appendChild(d); setTimeout(() => d.remove(), tipo === 'erro' ? 6000 : 3500); }
+function traduzErro(e){
+  const m = (e && (e.message || e.error_description)) || String(e);
+  const mapa = [
+    ['Invalid login credentials','E-mail ou senha incorretos.'],
+    ['Email not confirmed','Confirme seu e-mail antes de entrar (veja a caixa de entrada e o spam).'],
+    ['User already registered','Este e-mail já está cadastrado.'],
+    ['Password should be at least','A senha precisa ter pelo menos 8 caracteres.'],
+    ['row-level security','Você não tem permissão para esta ação.'],
+    ['For security purposes','Aguarde alguns segundos e tente de novo.'],
+    ['Failed to fetch','Sem conexão com o servidor. Verifique sua internet.'],
+    ['Payload too large','Arquivo muito grande (máximo 10 MB).'],
+    ['mime type','Tipo de arquivo não aceito. Envie foto (JPG/PNG) ou PDF.']
+  ];
+  for(const [k, v] of mapa) if(m.includes(k)) return v;
+  return m;
+}
+async function q(promise){ const { data, error } = await promise; if(error){ toast(traduzErro(error), 'erro'); try { error._mostrado = true; } catch(_){} throw error; } return data; }
+async function buscarTodos(montar){ let out = [], i = 0; for(;;){ const d = await q(montar().range(i, i+999)); out = out.concat(d); if(d.length < 1000) break; i += 1000; } return out; }
+
+/* ================= ESTADO ================= */
+const SLUG = new URLSearchParams(location.search).get('escola') || CONFIG.ESCOLA;
+let sb = null;
+const S = { sessao:null, perfil:null, escola:null, cursos:[], empresas:{}, minhaPessoa:null, view:'', param:null, hist:[], msgs:{}, recovery:false, pessoa:null, busca:'' };
+const staff = () => !!S.perfil && ['staff','admin'].includes(S.perfil.tipo);
+const linkPortal = () => location.origin + location.pathname + (SLUG !== CONFIG.ESCOLA ? '?escola=' + encodeURIComponent(SLUG) : '');
+
+const SOL = { rascunho:['Rascunho',''], enviada:['Aguardando análise','warn'], pendente:['Pendência — corrigir','bad'], aprovada:['Aprovada','ok'], matriculada:['Matriculado','nv'], concluida:['Concluída','ok'], recusada:['Recusada','bad'], cancelada:['Cancelada',''] };
+const DOCST = { falta:['Não enviado',''], enviado:['Em análise','warn'], aprovado:['Aprovado','ok'], recusado:['Recusado','bad'], vencido:['Vencido','bad'] };
+const bdg = (par) => '<span class="bdg '+par[1]+'">'+esc(par[0])+'</span>';
+function bdgValidade(iso){ const d = dias(iso); if(d === null) return '<span class="bdg">—</span>'; if(d < 0) return '<span class="bdg bad">Vencido em '+fmt(iso)+'</span>'; if(d <= 30) return '<span class="bdg bad">Vence em '+d+' dia(s)</span>'; if(d <= 90) return '<span class="bdg warn">Vence em '+fmt(iso)+'</span>'; return '<span class="bdg ok">Válido até '+fmt(iso)+'</span>'; }
+const parseDocs = c => (c && c.docs_exigidos || []).map(t => ({ nome: t.replace(/^\?/, '').trim(), opcional: t.startsWith('?') }));
+const curso = id => S.cursos.find(c => c.id === id) || {};
+function todosTiposDoc(){ const set = new Set(); S.cursos.forEach(c => parseDocs(c).forEach(d => set.add(d.nome))); set.add('Certificado de curso anterior'); set.add('Outro documento'); return [...set]; }
+
+/* ================= MODAL ================= */
+function abrirModal(titulo, corpo, botoes){
+  $('#modal').innerHTML = '<div class="mbox"><h3>'+esc(titulo)+'</h3>'+corpo+'<div class="mact">'+(botoes || '')+'<button class="btn sec" onclick="fecharModal()">Fechar</button></div></div>';
+  $('#modal').classList.add('on');
+}
+function fecharModal(){ $('#modal').classList.remove('on'); $('#modal').innerHTML = ''; }
+$('#modal').addEventListener('click', e => { if(e.target.id === 'modal') fecharModal(); });
+function travar(btn, txt){ if(!btn) return () => {}; const o = btn.textContent; btn.disabled = true; btn.textContent = txt || 'Aguarde...'; return () => { btn.disabled = false; btn.textContent = o; }; }
+
+/* ================= INÍCIO ================= */
+async function iniciar(){
+  if(!window.supabase || CONFIG.SUPABASE_URL.startsWith('COLE')){
+    $('#app').innerHTML = '<div class="auth"><div class="auth-box"><div class="brand">FIEL <b style="color:var(--or)">Segurança Privada</b></div><p>Sistema ainda não configurado.</p><p class="muted small">Preencha SUPABASE_URL e SUPABASE_ANON_KEY no início do arquivo index.html.</p></div></div>';
+    return;
+  }
+  sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+  const { data: escola } = await sb.from('escolas').select('*').eq('slug', SLUG).maybeSingle();
+  S.escola = escola;
+  sb.auth.onAuthStateChange((ev, sessao) => {
+    if(ev === 'PASSWORD_RECOVERY'){ S.recovery = true; telaAuth('nova'); return; }
+    if(ev === 'TOKEN_REFRESHED' || ev === 'USER_UPDATED'){ S.sessao = sessao; return; }
+    setTimeout(() => entrar(sessao), 0);
+  });
+}
+
+async function entrar(sessao){
+  if(S.recovery) return telaAuth('nova');
+  if(!sessao){ S.sessao = null; S.perfil = null; return telaAuth('entrar'); }
+  if(S.perfil && S.sessao && S.sessao.user.id === sessao.user.id){ S.sessao = sessao; return; }
+  S.sessao = sessao;
+  try {
+    const perfil = await q(sb.from('perfis').select('*').eq('id', sessao.user.id).maybeSingle());
+    if(!perfil){ $('#app').innerHTML = '<div class="auth"><div class="auth-box"><p>Seu cadastro não foi encontrado. Fale com a escola.</p><button class="btn" onclick="sair()">Sair</button></div></div>'; return; }
+    S.perfil = perfil;
+    if(!S.escola || S.escola.id !== perfil.escola_id) S.escola = await q(sb.from('escolas').select('*').eq('id', perfil.escola_id).single());
+    await carregarCursos();
+    if(staff()) await carregarEmpresas();
+    if(perfil.tipo === 'aluno'){ const p = await q(sb.from('pessoas').select('id').eq('usuario_id', perfil.id).limit(1)); S.minhaPessoa = p[0] ? p[0].id : null; }
+    S.hist = [];
+    if(staff()) go('painel', null, false);
+    else if(perfil.tipo === 'empresa') go('vigilantes', null, false);
+    else go('pessoa', S.minhaPessoa, false);
+  } catch(e){ console.error(e); }
+}
+async function carregarCursos(){ S.cursos = await q(sb.from('cursos').select('*').eq('escola_id', S.perfil.escola_id).order('sigla')); }
+async function carregarEmpresas(){ const l = await q(sb.from('perfis').select('id,nome,cpf_cnpj,telefone,email').eq('tipo','empresa').eq('escola_id', S.perfil.escola_id).order('nome')); S.empresas = {}; l.forEach(e => S.empresas[e.id] = e); }
+async function sair(){ await sb.auth.signOut(); S.perfil = null; S.sessao = null; telaAuth('entrar'); }
+
+/* ================= LOGIN / CADASTRO ================= */
+function telaAuth(aba){
+  const nomeEscola = S.escola ? S.escola.nome : '';
+  const abas = aba === 'nova' ? '' : '<div class="tabs"><button class="'+(aba==='entrar'?'on':'')+'" onclick="telaAuth(\'entrar\')">Entrar</button><button class="'+(aba==='cadastro'?'on':'')+'" onclick="telaAuth(\'cadastro\')">Criar conta</button></div>';
+  let corpo = '';
+  if(aba === 'entrar') corpo =
+    '<label class="f"><span>E-mail</span><input id="aEmail" type="email" autocomplete="email"></label>'+
+    '<label class="f"><span>Senha</span><input id="aSenha" type="password" autocomplete="current-password" onkeydown="if(event.key===\'Enter\')fazerLogin(this)"></label>'+
+    '<button class="btn" style="width:100%" onclick="fazerLogin(this)">Entrar</button>'+
+    '<p style="text-align:center;margin:14px 0 0"><a href="#" onclick="telaAuth(\'esqueci\');return false">Esqueci minha senha</a></p>';
+  if(aba === 'cadastro') corpo =
+    '<div class="radio"><label id="rAluno" class="on" onclick="tipoCad(\'aluno\')">Sou aluno / vigilante</label><label id="rEmpresa" onclick="tipoCad(\'empresa\')">Sou empresa</label></div>'+
+    '<label class="f"><span id="lNome">Nome completo</span><input id="cNome"></label>'+
+    '<label class="f"><span id="lDoc">CPF</span><input id="cDoc" inputmode="numeric"></label>'+
+    '<label class="f"><span>Telefone / WhatsApp</span><input id="cTel" inputmode="tel" placeholder="(66) 99999-9999"></label>'+
+    '<label class="f"><span>E-mail</span><input id="cEmail" type="email" autocomplete="email"></label>'+
+    '<label class="f"><span>Senha (mínimo 8 caracteres)</span><input id="cSenha" type="password" autocomplete="new-password"></label>'+
+    '<label class="f"><span>Repita a senha</span><input id="cSenha2" type="password" autocomplete="new-password"></label>'+
+    '<div class="lgpd" id="txtLgpd">'+textoLgpd('aluno')+'</div>'+
+    '<label class="chk"><input type="checkbox" id="cLgpd"> <span>Li e concordo com o tratamento dos meus dados descrito acima.</span></label>'+
+    '<button class="btn" style="width:100%" onclick="fazerCadastro(this)">Criar conta</button>';
+  if(aba === 'esqueci') corpo =
+    '<p class="small muted">Informe o e-mail da sua conta. Enviaremos um link para criar uma nova senha.</p>'+
+    '<label class="f"><span>E-mail</span><input id="rEmail" type="email"></label>'+
+    '<button class="btn" style="width:100%" onclick="pedirNovaSenha(this)">Enviar link</button>'+
+    '<p style="text-align:center;margin:14px 0 0"><a href="#" onclick="telaAuth(\'entrar\');return false">Voltar</a></p>';
+  if(aba === 'nova') corpo =
+    '<h3 style="margin-top:16px">Criar nova senha</h3>'+
+    '<label class="f"><span>Nova senha (mínimo 8 caracteres)</span><input id="nSenha" type="password" autocomplete="new-password"></label>'+
+    '<label class="f"><span>Repita a nova senha</span><input id="nSenha2" type="password" autocomplete="new-password"></label>'+
+    '<button class="btn" style="width:100%" onclick="salvarNovaSenha(this)">Salvar nova senha</button>';
+  $('#app').innerHTML = '<div class="auth"><div class="auth-box"><div class="brand">FIEL <b>Segurança Privada</b></div><div class="muted">'+esc(nomeEscola)+' · Portal do aluno e da empresa</div>'+abas+corpo+'</div></div>';
+  S.tipoCad = 'aluno';
+}
+function textoLgpd(tipo){
+  const escola = S.escola ? S.escola.nome : 'a escola';
+  let t = 'Autorizo '+esc(escola)+' a coletar e tratar meus dados pessoais e os documentos que eu enviar, inclusive dados sensíveis (certidões de antecedentes, exames de saúde e avaliação psicológica), exclusivamente para: análise de matrícula, cumprimento das exigências da Polícia Federal e da legislação de segurança privada, emissão de certificados e aviso de vencimento de cursos. Os arquivos ficam em armazenamento privado e só são acessados pela equipe da escola. Os dados serão mantidos pelo prazo exigido pelas normas aplicáveis, e posso pedir acesso, correção ou exclusão pelos canais de atendimento da escola (Lei nº 13.709/2018 – LGPD).';
+  if(tipo === 'empresa') t += ' Como empresa, declaro que tenho autorização dos colaboradores que eu cadastrar para enviar seus dados e documentos à escola.';
+  return t;
+}
+function tipoCad(t){
+  S.tipoCad = t;
+  $('#rAluno').classList.toggle('on', t === 'aluno'); $('#rEmpresa').classList.toggle('on', t === 'empresa');
+  $('#lNome').textContent = t === 'empresa' ? 'Razão social / nome da empresa' : 'Nome completo';
+  $('#lDoc').textContent = t === 'empresa' ? 'CNPJ' : 'CPF';
+  $('#txtLgpd').innerHTML = textoLgpd(t);
+}
+async function fazerLogin(btn){
+  const email = $('#aEmail').value.trim(), senha = $('#aSenha').value;
+  if(!email || !senha) return toast('Informe e-mail e senha.', 'erro');
+  const solta = travar(btn, 'Entrando...');
+  const { error } = await sb.auth.signInWithPassword({ email, password: senha });
+  solta();
+  if(error) toast(traduzErro(error), 'erro');
+}
+async function fazerCadastro(btn){
+  const t = S.tipoCad, nome = $('#cNome').value.trim(), doc = soDig($('#cDoc').value), tel = $('#cTel').value.trim();
+  const email = $('#cEmail').value.trim(), s1 = $('#cSenha').value, s2 = $('#cSenha2').value;
+  if(nome.length < 3) return toast('Informe o nome.', 'erro');
+  if(t === 'aluno' && !cpfValido(doc)) return toast('CPF inválido.', 'erro');
+  if(t === 'empresa' && !cnpjValido(doc)) return toast('CNPJ inválido.', 'erro');
+  if(soDig(tel).length < 10) return toast('Informe o telefone com DDD.', 'erro');
+  if(!/^\S+@\S+\.\S+$/.test(email)) return toast('E-mail inválido.', 'erro');
+  if(s1.length < 8) return toast('A senha precisa ter pelo menos 8 caracteres.', 'erro');
+  if(s1 !== s2) return toast('As senhas não conferem.', 'erro');
+  if(!$('#cLgpd').checked) return toast('É preciso concordar com o tratamento dos dados.', 'erro');
+  const solta = travar(btn, 'Criando conta...');
+  const { data, error } = await sb.auth.signUp({ email, password: s1, options: { emailRedirectTo: linkPortal(), data: { nome, tipo: t, cpf_cnpj: doc, telefone: tel, escola: SLUG, consentimento: true } } });
+  solta();
+  if(error) return toast(traduzErro(error), 'erro');
+  if(data.user && data.user.identities && data.user.identities.length === 0) return toast('Este e-mail já está cadastrado. Use "Esqueci minha senha".', 'erro');
+  if(!data.session){
+    $('.auth-box').innerHTML = '<div class="brand">FIEL <b>Segurança Privada</b></div><div class="aviso ok" style="margin-top:16px">Conta criada! Enviamos um link de confirmação para <b>'+esc(email)+'</b>. Abra o e-mail (veja também o spam) e clique no link para ativar sua conta.</div><button class="btn sec" onclick="telaAuth(\'entrar\')">Ir para o login</button>';
+  }
+}
+async function pedirNovaSenha(btn){
+  const email = $('#rEmail').value.trim(); if(!email) return toast('Informe o e-mail.', 'erro');
+  const solta = travar(btn);
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: linkPortal() });
+  solta();
+  if(error) return toast(traduzErro(error), 'erro');
+  toast('Se o e-mail estiver cadastrado, você receberá o link em instantes.');
+  telaAuth('entrar');
+}
+async function salvarNovaSenha(btn){
+  const s1 = $('#nSenha').value, s2 = $('#nSenha2').value;
+  if(s1.length < 8) return toast('A senha precisa ter pelo menos 8 caracteres.', 'erro');
+  if(s1 !== s2) return toast('As senhas não conferem.', 'erro');
+  const solta = travar(btn);
+  const { error } = await sb.auth.updateUser({ password: s1 });
+  solta();
+  if(error) return toast(traduzErro(error), 'erro');
+  S.recovery = false; toast('Senha alterada com sucesso.');
+  history.replaceState(null, '', location.pathname + location.search);
+  const { data } = await sb.auth.getSession(); S.perfil = null; entrar(data.session);
+}
+
+/* ================= NAVEGAÇÃO ================= */
+function menu(){
+  if(staff()) return [['painel','Painel'],['analise','Análise'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']];
+  if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
+  return [['pessoa','Meu cadastro']];
+}
+function moldura(){
+  if($('#main')) return;
+  $('#app').innerHTML = '<header><div><div class="brand">FIEL <b>Segurança Privada</b></div><small>'+esc(S.escola ? S.escola.nome : '')+'</small></div><div class="usr">'+esc(S.perfil.nome || S.perfil.email)+'<br><button onclick="sair()">Sair</button></div></header><nav id="nav"></nav><main id="main"></main>';
+}
+function desenharMenu(){
+  const raiz = { pessoa:'pessoa', vigilantes:'vigilantes' };
+  $('#nav').innerHTML = menu().map(([k, l]) => '<button class="'+(S.view === k || (S.hist.length && S.hist[0][0] === k) ? 'on' : '')+'" onclick="irMenu(\''+k+'\')">'+l+'</button>').join('');
+}
+function irMenu(k){ S.hist = []; go(k, k === 'pessoa' ? S.minhaPessoa : null, false); }
+async function go(view, param, empilhar = true){
+  if(empilhar && S.view) S.hist.push([S.view, S.param]);
+  S.view = view; S.param = param;
+  moldura(); desenharMenu();
+  $('#main').innerHTML = '<p class="muted">Carregando...</p>';
+  try { $('#main').innerHTML = await VIEWS[view](param); }
+  catch(e){ console.error(e); $('#main').innerHTML = '<div class="card"><p>Não foi possível carregar esta tela.</p><p class="muted small">'+esc(traduzErro(e))+'</p><button class="btn" onclick="recarregar()">Tentar de novo</button></div>'; }
+  window.scrollTo(0, 0);
+}
+function voltar(){ const h = S.hist.pop(); if(h) go(h[0], h[1], false); }
+function recarregar(){ const y = window.scrollY; go(S.view, S.param, false).then(() => window.scrollTo(0, y)); }
+const btnVoltar = () => S.hist.length ? '<button class="btn sec sm" onclick="voltar()">← Voltar</button>' : '';
+
+/* ================= CONTATO (WhatsApp / e-mail) ================= */
+function linkWhats(tel, msg){ let d = soDig(tel); if(d.length < 10) return null; if(d.length <= 11) d = '55' + d; return 'https://wa.me/' + d + '?text=' + encodeURIComponent(msg); }
+function botoesContato(p, assunto, msg){
+  const k = 'm' + Math.random().toString(36).slice(2, 9);
+  S.msgs[k] = { pessoaId: p.pessoa_id || p.id, tel: p.telefone, email: p.email, assunto, msg };
+  const w = linkWhats(p.telefone, msg);
+  return '<button class="btn wa sm" '+(w ? '' : 'disabled title="Sem telefone"')+' onclick="contatar(\''+k+'\',\'whatsapp\')">WhatsApp</button> '+
+         '<button class="btn nv sm" '+(p.email ? '' : 'disabled title="Sem e-mail"')+' onclick="contatar(\''+k+'\',\'email\')">E-mail</button>';
+}
+async function contatar(k, canal){
+  const m = S.msgs[k]; if(!m) return;
+  const url = canal === 'whatsapp' ? linkWhats(m.tel, m.msg) : 'mailto:' + encodeURIComponent(m.email) + '?subject=' + encodeURIComponent(m.assunto) + '&body=' + encodeURIComponent(m.msg);
+  window.open(url, '_blank');
+  if(staff() && m.pessoaId){ await sb.from('avisos').insert({ escola_id: S.perfil.escola_id, pessoa_id: m.pessoaId, canal, assunto: m.assunto }); }
+}
+const assinatura = () => '\n\n' + (S.escola ? S.escola.nome : '') + (S.escola && S.escola.whatsapp ? ' — WhatsApp ' + S.escola.whatsapp : '') + '\nPortal: ' + linkPortal();
+
+/* ================= ARQUIVOS ================= */
+async function prepararArquivo(file){
+  if(file.type === 'application/pdf'){ if(file.size > 10*1024*1024) throw new Error('PDF maior que 10 MB.'); return { blob: file, ext: 'pdf', tipo: 'application/pdf' }; }
+  if(!file.type.startsWith('image/')) throw new Error('Envie uma foto (JPG/PNG) ou um PDF.');
+  const img = await new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => erro(new Error('Não foi possível ler a imagem. Tente JPG ou PDF.')); i.src = URL.createObjectURL(file); });
+  const max = 1800, f = Math.min(1, max / Math.max(img.width, img.height));
+  const c = document.createElement('canvas'); c.width = Math.round(img.width * f); c.height = Math.round(img.height * f);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(img.src);
+  const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82));
+  return { blob, ext: 'jpg', tipo: 'image/jpeg' };
+}
+async function subirArquivo(pessoa, file){
+  const arq = await prepararArquivo(file);
+  const path = pessoa.escola_id + '/' + pessoa.id + '/' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)) + '.' + arq.ext;
+  await q(sb.storage.from('documentos').upload(path, arq.blob, { contentType: arq.tipo, upsert: false }));
+  return path;
+}
+async function verArquivo(path){
+  const w = window.open('', '_blank');
+  const { data, error } = await sb.storage.from('documentos').createSignedUrl(path, 300);
+  if(error){ if(w) w.close(); return toast(traduzErro(error), 'erro'); }
+  if(w) w.location = data.signedUrl; else window.location = data.signedUrl;
+}
+
+/* ================= TELA: PESSOA (cadastro, pré-matrículas, documentos, cursos) ================= */
+function docAtual(tipo){ return (S.pessoa.docs || []).find(d => d.tipo === tipo) || null; }
+function estadoDoc(d){ if(!d) return 'falta'; if(d.status === 'recusado') return 'recusado'; if(d.validade && dias(d.validade) < 0) return 'vencido'; return d.status; }
+function faltando(sol){ return parseDocs(sol.cursos).filter(x => !x.opcional && ['falta','recusado','vencido'].includes(estadoDoc(docAtual(x.nome)))); }
+
+async function vPessoa(id){
+  if(!id) return '<div class="card">Cadastro não encontrado. Fale com a escola.</div>';
+  const [p, docs, sols, certs] = await Promise.all([
+    q(sb.from('pessoas').select('*').eq('id', id).single()),
+    q(sb.from('documentos').select('*').eq('pessoa_id', id).order('enviado_em', { ascending: false })),
+    q(sb.from('solicitacoes').select('*, cursos(sigla,nome,docs_exigidos)').eq('pessoa_id', id).order('criado_em', { ascending: false })),
+    q(sb.from('certificacoes').select('*, cursos(sigla,nome,validade_meses)').eq('pessoa_id', id).order('data_conclusao', { ascending: false }))
+  ]);
+  S.pessoa = { p, docs, sols, certs };
+  const souAluno = S.perfil.tipo === 'aluno';
+  const ativas = sols.filter(s => !['cancelada','recusada','concluida'].includes(s.status));
+  let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? 'Meu cadastro' : p.nome)+'</h2><span class="sp"></span>';
+  if(staff()) h += botoesContato(p, 'Escola — ' + p.nome, 'Olá, ' + p.nome.split(' ')[0] + '!' + assinatura()) + ' <button class="btn dg sm" onclick="excluirPessoa(\''+p.id+'\')">Excluir</button>';
+  h += '</div>';
+  if(!staff() && !sols.length) h += '<div class="passos"><div><b>Passo 1</b>Confira e complete seus dados</div><div><b>Passo 2</b>Crie a pré-matrícula no curso desejado</div><div><b>Passo 3</b>Envie os documentos pedidos</div><div><b>Passo 4</b>Clique em "Enviar para análise"</div></div>';
+  if(staff() && p.empresa_id && S.empresas[p.empresa_id]) h += '<div class="aviso">Cadastrado pela empresa <b>'+esc(S.empresas[p.empresa_id].nome)+'</b>.</div>';
+  // pré-matrículas
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Pré-matrículas</h3><span class="sp"></span><button class="btn" onclick="novaSolicitacao()">+ Nova pré-matrícula</button></div>';
+  h += sols.length ? sols.map(s => cardSolicitacao(s)).join('') : '<p class="muted">Nenhuma pré-matrícula ainda.</p>';
+  h += '</div>';
+  // cursos e validades
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Cursos concluídos e validade</h3><span class="sp"></span>'+(staff() ? '<button class="btn nv sm" onclick="novaCertificacao(true)">Registrar conclusão</button>' : '<button class="btn sec sm" onclick="novaCertificacao(false)">Informar curso já feito</button>')+'</div>';
+  h += certs.length ? '<div class="tw"><table><tr><th>Curso</th><th>Conclusão</th><th>Validade</th><th>Origem</th><th></th></tr>'+certs.map(c => {
+    const vm = c.cursos ? c.cursos.validade_meses : 0; const vence = vm > 0 ? addMeses(c.data_conclusao, vm) : null;
+    return '<tr><td><b>'+esc(c.cursos ? c.cursos.sigla : '')+'</b> <span class="muted small">'+esc(c.cursos ? c.cursos.nome : '')+'</span></td><td>'+fmt(c.data_conclusao)+'</td><td>'+(vence ? bdgValidade(vence) : '<span class="muted">Sem validade</span>')+'</td>'+
+      '<td>'+(c.origem === 'escola' ? 'Nesta escola' : esc(c.escola_origem || 'Informado'))+' '+(c.verificado ? '<span class="bdg ok">Conferido</span>' : '<span class="bdg warn">A conferir</span>')+'</td>'+
+      '<td style="white-space:nowrap">'+(c.certificado_path ? '<button class="btn sec sm" onclick="verArquivo(\''+esc(c.certificado_path)+'\')">Certificado</button> ' : '')+
+      (staff() ? (c.verificado ? '' : '<button class="btn ok sm" onclick="conferirCert(\''+c.id+'\')">Conferir</button> ')+'<button class="btn sec sm" onclick="excluirCert(\''+c.id+'\')">✕</button>' : '')+'</td></tr>';
+  }).join('')+'</table></div>' : '<p class="muted">Nenhum curso registrado. '+(staff() ? '' : 'Se você já fez formação ou atualização, informe aqui para receber o aviso de vencimento.')+'</p>';
+  h += '</div>';
+  // documentos
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span><button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
+  h += docs.length ? '<div class="tw"><table><tr><th>Documento</th><th>Enviado</th><th>Validade</th><th>Situação</th><th></th></tr>'+docs.map(d => {
+    const st = estadoDoc(d);
+    return '<tr><td>'+esc(d.tipo)+'</td><td>'+fmt(d.enviado_em)+'</td><td>'+(d.validade ? fmt(d.validade) : '—')+'</td><td>'+bdg(DOCST[st])+(d.motivo && d.status === 'recusado' ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
+      '<td class="acoes"><button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\')">Ver</button>'+
+      (staff() ? ' <button class="btn ok sm" '+(d.status === 'aprovado' ? 'disabled' : '')+' onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" '+(d.status === 'recusado' ? 'disabled' : '')+' onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
+  }).join('')+'</table></div>' : '<p class="muted">Nenhum documento enviado.</p>';
+  h += '</div>';
+  // dados pessoais
+  const sel = (v, ops) => ops.map(o => '<option'+(o === (v || '') ? ' selected' : '')+'>'+o+'</option>').join('');
+  h += '<div class="card"><h3>Dados pessoais</h3><div class="fgrid">'+
+    '<label class="f w"><span>Nome completo</span><input id="pNome" value="'+esc(p.nome)+'"></label>'+
+    '<label class="f"><span>CPF</span><input id="pCpf" inputmode="numeric" value="'+esc(fmtDoc(p.cpf) === '—' ? '' : fmtDoc(p.cpf))+'"></label>'+
+    '<label class="f"><span>RG / órgão emissor</span><input id="pRg" value="'+esc(p.rg)+'"></label>'+
+    '<label class="f"><span>Data de nascimento</span><input id="pNasc" type="date" value="'+esc(p.nascimento)+'"></label>'+
+    '<label class="f"><span>Sexo</span><select id="pSexo">'+sel(p.sexo, ['','Masculino','Feminino'])+'</select></label>'+
+    '<label class="f"><span>Telefone / WhatsApp</span><input id="pTel" inputmode="tel" value="'+esc(p.telefone)+'"></label>'+
+    '<label class="f"><span>E-mail</span><input id="pEmail" type="email" value="'+esc(p.email)+'"></label>'+
+    '<label class="f w"><span>Endereço completo</span><input id="pEnd" value="'+esc(p.endereco)+'"></label>'+
+    '<label class="f"><span>Escolaridade</span><select id="pEsc">'+sel(p.escolaridade, ['','Fundamental incompleto','Fundamental completo','Médio incompleto','Médio completo','Superior incompleto','Superior completo'])+'</select></label>'+
+    '<label class="f"><span>Nº da CNV (se já for vigilante)</span><input id="pCnv" value="'+esc(p.cnv)+'"></label>'+
+    (staff() ? '<label class="f w"><span>Observações internas</span><textarea id="pObs" rows="2">'+esc(p.obs)+'</textarea></label>' : '')+
+    '</div><button class="btn" onclick="salvarPessoa(this)">Salvar dados</button></div>';
+  return h;
+}
+
+function cardSolicitacao(s){
+  const c = s.cursos || {}, lista = parseDocs(c), falta = faltando(s);
+  const editavel = !staff() && ['rascunho','pendente'].includes(s.status);
+  let h = '<div class="sol"><h4>'+esc(c.sigla || '')+' — '+esc(c.nome || '')+' '+bdg(SOL[s.status])+'</h4>';
+  h += '<div class="small muted">Criada em '+fmt(s.criado_em)+(s.enviada_em ? ' · enviada em '+fmt(s.enviada_em) : '')+(s.obs ? ' · obs.: '+esc(s.obs) : '')+'</div>';
+  if(s.obs_escola) h += '<div class="aviso '+(s.status === 'pendente' || s.status === 'recusada' ? 'bad' : 'ok')+'" style="margin-top:8px"><b>Retorno da escola:</b> '+esc(s.obs_escola)+'</div>';
+  if(s.status === 'enviada' && !staff()) h += '<div class="aviso" style="margin-top:8px">Recebemos sua pré-matrícula. A escola vai analisar os documentos e você verá o resultado aqui.</div>';
+  if(!['cancelada','recusada','concluida'].includes(s.status) && lista.length){
+    h += '<div class="tw" style="margin-top:8px"><table><tr><th>Documento exigido</th><th>Situação</th><th></th></tr>'+lista.map(x => {
+      const d = docAtual(x.nome), st = estadoDoc(d);
+      const podeEnviar = st !== 'aprovado' && (staff() || ['rascunho','pendente','enviada'].includes(s.status));
+      return '<tr><td>'+esc(x.nome)+(x.opcional ? ' <span class="muted small">(se aplicável)</span>' : '')+'</td><td>'+bdg(DOCST[st])+(d && d.status === 'recusado' && d.motivo ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
+        '<td class="acoes">'+(d ? '<button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\')">Ver</button> ' : '')+
+        (podeEnviar ? '<button class="btn sm" onclick="modalEnvio(\''+esc(x.nome).replace(/&#39;/g, "\\'")+'\')">'+(d ? 'Reenviar' : 'Enviar')+'</button>' : '')+
+        (staff() && d && d.status === 'enviado' ? ' <button class="btn ok sm" onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
+    }).join('')+'</table></div>';
+  }
+  h += '<div class="bar" style="margin:10px 0 0">';
+  if(editavel) h += '<button class="btn ok" '+(falta.length ? 'disabled' : '')+' onclick="enviarAnalise(\''+s.id+'\',this)">Enviar para análise</button>'+(falta.length ? '<span class="small muted">Faltam '+falta.length+' documento(s) obrigatório(s).</span>' : '');
+  if(!staff() && ['rascunho','enviada','pendente'].includes(s.status)) h += '<span class="sp"></span><button class="btn sec sm" onclick="cancelarSolicitacao(\''+s.id+'\')">Cancelar pré-matrícula</button>';
+  if(staff()) h += '<select id="st_'+s.id+'" style="max-width:220px">'+Object.entries(SOL).map(([k, v]) => '<option value="'+k+'"'+(k === s.status ? ' selected' : '')+'>'+v[0]+'</option>').join('')+'</select>'+
+    '<input id="ob_'+s.id+'" placeholder="Retorno para o aluno (opcional)" style="flex:1;min-width:200px" value="'+esc(s.obs_escola)+'">'+
+    '<button class="btn nv sm" onclick="salvarSituacao(\''+s.id+'\',this)">Salvar situação</button>';
+  h += '</div></div>';
+  return h;
+}
+
+async function salvarPessoa(btn){
+  const p = S.pessoa.p, cpf = soDig($('#pCpf').value);
+  const nome = $('#pNome').value.trim();
+  if(nome.length < 3) return toast('Informe o nome completo.', 'erro');
+  if(cpf && !cpfValido(cpf)) return toast('CPF inválido.', 'erro');
+  const dados = { nome, cpf: cpf || null, rg: $('#pRg').value.trim(), nascimento: $('#pNasc').value || null, sexo: $('#pSexo').value, telefone: $('#pTel').value.trim(), email: $('#pEmail').value.trim(), endereco: $('#pEnd').value.trim(), escolaridade: $('#pEsc').value, cnv: $('#pCnv').value.trim() };
+  if(staff()) dados.obs = $('#pObs').value;
+  const solta = travar(btn, 'Salvando...');
+  try { await q(sb.from('pessoas').update(dados).eq('id', p.id)); toast('Dados salvos.'); recarregar(); } finally { solta(); }
+}
+function novaSolicitacao(){
+  const ativos = S.cursos.filter(c => c.ativo);
+  if(!ativos.length) return toast('Nenhum curso disponível no momento.', 'erro');
+  abrirModal('Nova pré-matrícula',
+    '<label class="f"><span>Curso desejado</span><select id="nsCurso">'+ativos.map(c => '<option value="'+c.id+'">'+esc(c.sigla+' — '+c.nome)+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Observação (turno de preferência, data, etc.)</span><textarea id="nsObs" rows="2"></textarea></label>',
+    '<button class="btn" onclick="criarSolicitacao(this)">Criar</button>');
+}
+async function criarSolicitacao(btn){
+  const curso_id = $('#nsCurso').value, obs = $('#nsObs').value.trim();
+  if(S.pessoa.sols.some(s => s.curso_id === curso_id && ['rascunho','enviada','pendente','aprovada','matriculada'].includes(s.status))) return toast('Já existe uma pré-matrícula em andamento para este curso.', 'erro');
+  const solta = travar(btn);
+  try { await q(sb.from('solicitacoes').insert({ pessoa_id: S.pessoa.p.id, escola_id: S.pessoa.p.escola_id, curso_id, obs, status: 'rascunho' })); fecharModal(); toast('Pré-matrícula criada. Agora envie os documentos.'); recarregar(); } finally { solta(); }
+}
+function modalEnvio(tipo){
+  const tipos = todosTiposDoc();
+  abrirModal('Enviar documento',
+    '<label class="f"><span>Documento</span><select id="enTipo">'+tipos.map(t => '<option'+(t === tipo ? ' selected' : '')+'>'+esc(t)+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Arquivo (foto ou PDF, até 10 MB)</span><input id="enArq" type="file" accept="image/*,application/pdf"></label>'+
+    '<label class="f"><span>Validade do documento (se houver)</span><input id="enVal" type="date"></label>'+
+    '<p class="small muted">Dica: fotografe o documento inteiro, em local claro, sem cortes e sem reflexo.</p>',
+    '<button class="btn" onclick="enviarDocumento(this)">Enviar</button>');
+}
+async function enviarDocumento(btn){
+  const f = $('#enArq').files[0], tipo = $('#enTipo').value, validade = $('#enVal').value || null;
+  if(!f) return toast('Escolha o arquivo.', 'erro');
+  const solta = travar(btn, 'Enviando...');
+  try {
+    const p = S.pessoa.p;
+    const path = await subirArquivo(p, f);
+    await q(sb.from('documentos').insert({ pessoa_id: p.id, escola_id: p.escola_id, tipo, arquivo_path: path, nome_arquivo: f.name, validade }));
+    fecharModal(); toast('Documento enviado.'); recarregar();
+  } catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); } finally { solta(); }
+}
+async function enviarAnalise(id, btn){
+  const solta = travar(btn, 'Enviando...');
+  try { await q(sb.from('solicitacoes').update({ status: 'enviada' }).eq('id', id)); toast('Enviada para análise da escola.'); recarregar(); } finally { solta(); }
+}
+async function cancelarSolicitacao(id){
+  if(!confirm('Cancelar esta pré-matrícula?')) return;
+  await q(sb.from('solicitacoes').update({ status: 'cancelada' }).eq('id', id)); recarregar();
+}
+async function analisarDoc(id, status, motivo){
+  await q(sb.from('documentos').update({ status, motivo: motivo || null }).eq('id', id));
+  toast(status === 'aprovado' ? 'Documento aprovado.' : 'Documento recusado.'); recarregar();
+}
+function recusarDoc(id){
+  const d = S.pessoa.docs.find(x => x.id === id);
+  abrirModal('Recusar documento — ' + d.tipo,
+    '<label class="f"><span>Motivo (o aluno verá este texto)</span><select onchange="if(this.value)document.getElementById(\'rcMot\').value=this.value"><option value="">Motivos comuns...</option><option>Imagem ilegível ou cortada. Envie novamente, com boa iluminação.</option><option>Documento vencido. Envie uma via atualizada.</option><option>Documento não corresponde ao solicitado.</option><option>Documento de outra pessoa.</option><option>Falta frente ou verso.</option></select></label>'+
+    '<label class="f"><textarea id="rcMot" rows="3"></textarea></label>',
+    '<button class="btn dg" onclick="confirmarRecusa(\''+id+'\',this)">Recusar</button>');
+}
+async function confirmarRecusa(id, btn){
+  const motivo = $('#rcMot').value.trim(); if(!motivo) return toast('Informe o motivo.', 'erro');
+  const solta = travar(btn);
+  try {
+    await q(sb.from('documentos').update({ status: 'recusado', motivo }).eq('id', id));
+    const p = S.pessoa.p, d = S.pessoa.docs.find(x => x.id === id);
+    const msg = 'Olá, ' + p.nome.split(' ')[0] + '! O documento "' + d.tipo + '" enviado para sua pré-matrícula precisa ser reenviado.\nMotivo: ' + motivo + '\nAcesse o portal e envie novamente.' + assinatura();
+    abrirModal('Documento recusado', '<p>Deseja avisar o aluno agora?</p><div class="bar">'+botoesContato(p, 'Documento recusado — ' + d.tipo, msg)+'</div>', '');
+    S._recarregarAoFechar = true;
+  } finally { solta(); }
+}
+async function salvarSituacao(id, btn){
+  const status = $('#st_' + id).value, obs_escola = $('#ob_' + id).value.trim() || null;
+  const s = S.pessoa.sols.find(x => x.id === id);
+  const solta = travar(btn);
+  try {
+    await q(sb.from('solicitacoes').update({ status, obs_escola }).eq('id', id));
+    if(status === 'concluida' && s.status !== 'concluida'){
+      solta(); toast('Situação salva. Registre agora a data de conclusão.');
+      novaCertificacao(true, s.curso_id); return;
+    }
+    const p = S.pessoa.p, nomeCurso = (s.cursos && s.cursos.sigla) || '';
+    if(status !== s.status && ['pendente','aprovada','recusada','matriculada'].includes(status)){
+      const txt = { pendente: 'tem pendências que precisam ser corrigidas', aprovada: 'foi APROVADA', recusada: 'não pôde ser aprovada', matriculada: 'foi confirmada: você está matriculado(a)' }[status];
+      const msg = 'Olá, ' + p.nome.split(' ')[0] + '! Sua pré-matrícula no curso ' + nomeCurso + ' ' + txt + '.' + (obs_escola ? '\n' + obs_escola : '') + '\nAcompanhe pelo portal.' + assinatura();
+      abrirModal('Situação atualizada', '<p>Deseja avisar o aluno agora?</p><div class="bar">'+botoesContato(p, 'Pré-matrícula ' + nomeCurso, msg)+'</div>', '');
+      S._recarregarAoFechar = true;
+    } else { toast('Situação salva.'); recarregar(); }
+  } finally { solta(); }
+}
+function novaCertificacao(comoEscola, cursoId){
+  abrirModal(comoEscola ? 'Registrar conclusão de curso' : 'Informar curso já concluído',
+    '<label class="f"><span>Curso</span><select id="ncCurso">'+S.cursos.map(c => '<option value="'+c.id+'"'+(c.id === cursoId ? ' selected' : '')+'>'+esc(c.sigla+' — '+c.nome)+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Data de conclusão</span><input id="ncData" type="date" value="'+(comoEscola ? hojeISO() : '')+'"></label>'+
+    (comoEscola ? '<input type="hidden" id="ncOrig" value="">' : '<label class="f"><span>Escola onde fez o curso</span><input id="ncOrig"></label>')+
+    '<label class="f"><span>Certificado (foto ou PDF, opcional)</span><input id="ncArq" type="file" accept="image/*,application/pdf"></label>',
+    '<button class="btn" onclick="salvarCertificacao(this,'+(comoEscola ? 'true' : 'false')+')">Salvar</button>');
+}
+async function salvarCertificacao(btn, comoEscola){
+  const data = $('#ncData').value; if(!data) return toast('Informe a data de conclusão.', 'erro');
+  if(data > hojeISO()) return toast('A data de conclusão não pode ser no futuro.', 'erro');
+  const solta = travar(btn, 'Salvando...');
+  try {
+    const p = S.pessoa.p, f = $('#ncArq').files[0];
+    const certificado_path = f ? await subirArquivo(p, f) : null;
+    await q(sb.from('certificacoes').insert({ pessoa_id: p.id, escola_id: p.escola_id, curso_id: $('#ncCurso').value, data_conclusao: data, escola_origem: $('#ncOrig').value.trim() || null, certificado_path, origem: comoEscola ? 'escola' : 'informado', verificado: comoEscola }));
+    fecharModal(); toast('Curso registrado.'); recarregar();
+  } catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); } finally { solta(); }
+}
+async function conferirCert(id){ await q(sb.from('certificacoes').update({ verificado: true }).eq('id', id)); recarregar(); }
+async function excluirCert(id){ if(!confirm('Excluir este registro de curso?')) return; await q(sb.from('certificacoes').delete().eq('id', id)); recarregar(); }
+async function excluirPessoa(id){
+  if(!confirm('Excluir esta pessoa e todos os seus documentos e registros? Essa ação não pode ser desfeita.')) return;
+  const docs = S.pessoa.docs.map(d => d.arquivo_path).concat(S.pessoa.certs.map(c => c.certificado_path).filter(Boolean));
+  if(docs.length) await sb.storage.from('documentos').remove(docs);
+  await q(sb.from('pessoas').delete().eq('id', id)); toast('Excluído.'); S.hist.length ? voltar() : go('pessoas', null, false);
+}
+
+/* ================= TELA: VIGILANTES (empresa) ================= */
+async function vVigilantes(empresaId){
+  const eid = empresaId || (S.perfil.tipo === 'empresa' ? S.perfil.id : null);
+  const lista = await buscarTodos(() => sb.from('pessoas').select('id,nome,cpf,telefone').eq('empresa_id', eid).order('nome'));
+  const ids = lista.map(p => p.id);
+  let sols = [], vals = [];
+  if(ids.length){
+    for(let i = 0; i < ids.length; i += 150){
+      const fatia = ids.slice(i, i+150);
+      sols = sols.concat(await q(sb.from('solicitacoes').select('pessoa_id,status,criado_em,cursos(sigla)').in('pessoa_id', fatia).order('criado_em', { ascending: false })));
+      vals = vals.concat(await q(sb.from('v_validades').select('pessoa_id,sigla,vence_em').in('pessoa_id', fatia)));
+    }
+  }
+  const nomeEmp = empresaId && S.empresas[empresaId] ? S.empresas[empresaId].nome : '';
+  let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">Vigilantes'+(nomeEmp ? ' — '+esc(nomeEmp) : '')+' <span class="muted">('+lista.length+')</span></h2><span class="sp"></span>'+
+    '<button class="btn sec" onclick="modalImportar(\''+eid+'\')">Importar lista</button><button class="btn" onclick="modalNovaPessoa(\''+eid+'\')">+ Vigilante</button></div>';
+  if(!lista.length) return h + '<div class="card"><p>Nenhum vigilante cadastrado.</p><p class="muted small">Cadastre um a um ou importe uma lista. Depois, abra cada vigilante para criar a pré-matrícula e enviar os documentos.</p></div>';
+  h += '<div class="card"><div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Última pré-matrícula</th><th>Próximo vencimento</th></tr>'+lista.map(p => {
+    const s = sols.find(x => x.pessoa_id === p.id);
+    const v = vals.filter(x => x.pessoa_id === p.id).sort((a, b) => a.vence_em.localeCompare(b.vence_em))[0];
+    return '<tr class="click" onclick="go(\'pessoa\',\''+p.id+'\')"><td><b>'+esc(p.nome)+'</b></td><td>'+fmtDoc(p.cpf)+'</td><td>'+(s ? esc(s.cursos ? s.cursos.sigla : '')+' '+bdg(SOL[s.status]) : '<span class="muted">—</span>')+'</td><td>'+(v ? esc(v.sigla)+' '+bdgValidade(v.vence_em) : '<span class="muted">—</span>')+'</td></tr>';
+  }).join('')+'</table></div></div>';
+  return h;
+}
+function modalNovaPessoa(empresaId){
+  const escolhaEmp = staff() && !empresaId ? '<label class="f w"><span>Empresa (opcional)</span><select id="npEmp"><option value="">— Sem empresa (aluno particular) —</option>'+Object.values(S.empresas).map(e => '<option value="'+e.id+'">'+esc(e.nome)+'</option>').join('')+'</select></label>' : '';
+  abrirModal('Novo cadastro', '<div class="fgrid">'+
+    '<label class="f w"><span>Nome completo</span><input id="npNome"></label>'+
+    '<label class="f"><span>CPF</span><input id="npCpf" inputmode="numeric"></label>'+
+    '<label class="f"><span>Telefone / WhatsApp</span><input id="npTel" inputmode="tel"></label>'+
+    '<label class="f w"><span>E-mail</span><input id="npEmail" type="email"></label>'+escolhaEmp+'</div>',
+    '<button class="btn" onclick="criarPessoa(this,\''+(empresaId || '')+'\')">Cadastrar e abrir</button>');
+}
+async function criarPessoa(btn, empresaId){
+  const nome = $('#npNome').value.trim(), cpf = soDig($('#npCpf').value);
+  if(nome.length < 3) return toast('Informe o nome.', 'erro');
+  if(!cpfValido(cpf)) return toast('CPF inválido.', 'erro');
+  const eid = empresaId && empresaId !== 'null' ? empresaId : ($('#npEmp') ? $('#npEmp').value || null : null);
+  const solta = travar(btn);
+  try {
+    const nova = await q(sb.from('pessoas').insert({ escola_id: S.perfil.escola_id, empresa_id: eid, nome, cpf, telefone: $('#npTel').value.trim(), email: $('#npEmail').value.trim() }).select('id').single());
+    fecharModal(); go('pessoa', nova.id);
+  } finally { solta(); }
+}
+function modalImportar(empresaId){
+  abrirModal('Importar lista de vigilantes',
+    '<p class="small muted">Cole uma linha por pessoa, no formato:<br><b>Nome;CPF;Telefone;E-mail</b><br>Pode copiar direto de uma planilha (colunas nessa ordem).</p>'+
+    '<textarea id="imTxt" rows="8" placeholder="João da Silva;123.456.789-09;(66) 99999-0000;joao@email.com"></textarea>',
+    '<button class="btn" onclick="importar(this,\''+empresaId+'\')">Importar</button>');
+}
+async function importar(btn, empresaId){
+  const linhas = $('#imTxt').value.split('\n').map(l => l.trim()).filter(Boolean);
+  const ok = [], erros = [];
+  linhas.forEach((l, i) => {
+    const c = l.split(/[;\t]/).map(x => x.trim());
+    const cpf = soDig(c[1]);
+    if(!c[0] || c[0].length < 3) erros.push('Linha '+(i+1)+': nome vazio');
+    else if(!cpfValido(cpf)) erros.push('Linha '+(i+1)+' ('+c[0]+'): CPF inválido');
+    else ok.push({ escola_id: S.perfil.escola_id, empresa_id: empresaId && empresaId !== 'null' ? empresaId : null, nome: c[0], cpf, telefone: c[2] || null, email: c[3] || null });
+  });
+  if(!ok.length) return toast(erros[0] || 'Nada para importar.', 'erro');
+  const solta = travar(btn, 'Importando...');
+  try {
+    await q(sb.from('pessoas').insert(ok));
+    fecharModal(); toast(ok.length+' cadastrado(s).'+(erros.length ? ' '+erros.length+' linha(s) ignorada(s).' : ''));
+    if(erros.length) abrirModal('Linhas não importadas', '<ul>'+erros.map(e => '<li>'+esc(e)+'</li>').join('')+'</ul>', '');
+    recarregar();
+  } finally { solta(); }
+}
+
+/* ================= TELA: VENCIMENTOS ================= */
+async function vVencimentos(){
+  const hoje = hojeISO();
+  const linhas = await buscarTodos(() => sb.from('v_validades').select('*').lte('vence_em', addDias(hoje, 120)).gte('vence_em', addDias(hoje, -365)).order('vence_em'));
+  let ultimos = {};
+  if(staff() && linhas.length){
+    const ids = [...new Set(linhas.map(l => l.pessoa_id))];
+    for(let i = 0; i < ids.length; i += 150){
+      const av = await q(sb.from('avisos').select('pessoa_id,enviado_em,canal').in('pessoa_id', ids.slice(i, i+150)).order('enviado_em', { ascending: false }));
+      av.forEach(a => { if(!ultimos[a.pessoa_id]) ultimos[a.pessoa_id] = a; });
+    }
+  }
+  const grupos = [['Vencidos (último ano)', l => dias(l.vence_em) < 0], ['Vencem em até 30 dias', l => dias(l.vence_em) >= 0 && dias(l.vence_em) <= 30], ['Vencem de 31 a 120 dias', l => dias(l.vence_em) > 30]];
+  let h = '<h2>Vencimentos de cursos</h2>';
+  if(!linhas.length) return h + '<div class="card"><p class="muted">Nenhum curso vencido ou vencendo nos próximos 120 dias.</p><p class="small muted">A validade é calculada a partir dos cursos concluídos registrados em cada cadastro.</p></div>';
+  grupos.forEach(([titulo, filtro]) => {
+    const g = linhas.filter(filtro); if(!g.length) return;
+    h += '<div class="card"><h3>'+titulo+' <span class="muted">('+g.length+')</span></h3><div class="tw"><table><tr><th>Nome</th>'+(staff() ? '<th>Empresa</th>' : '')+'<th>Curso</th><th>Validade</th>'+(staff() ? '<th>Último contato</th><th>Avisar</th>' : '')+'</tr>'+g.map(l => {
+      const msg = 'Olá, ' + (l.nome || '').split(' ')[0] + '! Seu curso ' + l.sigla + ' ' + (dias(l.vence_em) < 0 ? 'venceu em ' : 'vence em ') + fmt(l.vence_em) + '. Para continuar apto(a) a trabalhar como vigilante, faça sua atualização. Faça sua pré-matrícula pelo portal ou responda esta mensagem para agendar.' + assinatura();
+      const u = ultimos[l.pessoa_id];
+      return '<tr><td><a href="#" onclick="go(\'pessoa\',\''+l.pessoa_id+'\');return false"><b>'+esc(l.nome)+'</b></a><div class="small muted">'+esc(l.telefone || '')+'</div></td>'+(staff() ? '<td>'+esc(l.empresa_nome || 'Particular')+'</td>' : '')+'<td>'+esc(l.sigla)+'</td><td>'+bdgValidade(l.vence_em)+'</td>'+
+        (staff() ? '<td class="small">'+(u ? fmt(u.enviado_em)+' ('+esc(u.canal)+')' : '<span class="muted">Nunca</span>')+'</td><td style="white-space:nowrap">'+botoesContato(l, 'Atualização do curso ' + l.sigla, msg)+'</td>' : '')+'</tr>';
+    }).join('')+'</table></div></div>';
+  });
+  return h;
+}
+
+/* ================= TELAS DA ESCOLA ================= */
+async function vPainel(){
+  const eid = S.perfil.escola_id, hoje = hojeISO();
+  const cnt = async (montar) => { const { count, error } = await montar; if(error) throw error; return count || 0; };
+  const [aguard, docs, pend, pessoas, venc30] = await Promise.all([
+    cnt(sb.from('solicitacoes').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'enviada')),
+    cnt(sb.from('documentos').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'enviado')),
+    cnt(sb.from('solicitacoes').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'pendente')),
+    cnt(sb.from('pessoas').select('id', { count: 'exact', head: true }).eq('escola_id', eid)),
+    cnt(sb.from('v_validades').select('pessoa_id', { count: 'exact', head: true }).eq('escola_id', eid).lte('vence_em', addDias(hoje, 30)).gte('vence_em', addDias(hoje, -365)))
+  ]);
+  const k = (t, v, view, cor) => '<div class="kpi" onclick="irMenu(\''+view+'\')"><span>'+t+'</span><b style="color:'+(v && cor ? cor : 'inherit')+'">'+v+'</b></div>';
+  return '<h2>Painel</h2><div class="kpis">'+
+    k('Pré-matrículas aguardando análise', aguard, 'analise', 'var(--or)')+
+    k('Documentos aguardando análise', docs, 'analise', 'var(--or)')+
+    k('Pré-matrículas com pendência (aguardando aluno)', pend, 'analise')+
+    k('Cursos vencidos ou vencendo em 30 dias', venc30, 'vencimentos', 'var(--bad)')+
+    k('Pessoas cadastradas', pessoas, 'pessoas')+
+    '</div><div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
+}
+async function vAnalise(){
+  const eid = S.perfil.escola_id;
+  const [sols, docs, pend] = await Promise.all([
+    q(sb.from('solicitacoes').select('id,pessoa_id,enviada_em,status,pessoas(nome,cpf,empresa_id),cursos(sigla)').eq('escola_id', eid).eq('status', 'enviada').order('enviada_em')),
+    q(sb.from('documentos').select('pessoa_id,tipo,enviado_em,pessoas(nome)').eq('escola_id', eid).eq('status', 'enviado').order('enviado_em').limit(500)),
+    q(sb.from('solicitacoes').select('id,pessoa_id,criado_em,obs_escola,pessoas(nome),cursos(sigla)').eq('escola_id', eid).eq('status', 'pendente').order('criado_em'))
+  ]);
+  const porPessoa = {}; docs.forEach(d => { (porPessoa[d.pessoa_id] = porPessoa[d.pessoa_id] || { nome: d.pessoas ? d.pessoas.nome : '', n: 0, desde: d.enviado_em }).n++; });
+  const emp = id => id && S.empresas[id] ? S.empresas[id].nome : 'Particular';
+  let h = '<h2>Análise</h2>';
+  h += '<div class="card"><h3>Pré-matrículas aguardando análise ('+sols.length+')</h3>'+(sols.length ? '<div class="tw"><table><tr><th>Nome</th><th>Curso</th><th>Empresa</th><th>Enviada em</th></tr>'+sols.map(s => '<tr class="click" onclick="go(\'pessoa\',\''+s.pessoa_id+'\')"><td><b>'+esc(s.pessoas ? s.pessoas.nome : '')+'</b><div class="small muted">'+fmtDoc(s.pessoas ? s.pessoas.cpf : '')+'</div></td><td>'+esc(s.cursos ? s.cursos.sigla : '')+'</td><td>'+esc(emp(s.pessoas && s.pessoas.empresa_id))+'</td><td>'+fmt(s.enviada_em)+' <span class="muted small">('+Math.max(0, -dias(s.enviada_em.slice(0,10)))+' dia(s))</span></td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma. Tudo em dia.</p>')+'</div>';
+  const pp = Object.entries(porPessoa);
+  h += '<div class="card"><h3>Documentos novos aguardando análise ('+docs.length+')</h3>'+(pp.length ? '<div class="tw"><table><tr><th>Nome</th><th>Documentos</th><th>Desde</th></tr>'+pp.map(([id, x]) => '<tr class="click" onclick="go(\'pessoa\',\''+id+'\')"><td><b>'+esc(x.nome)+'</b></td><td>'+x.n+'</td><td>'+fmt(x.desde)+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum.</p>')+'</div>';
+  h += '<div class="card"><h3>Com pendência, aguardando o aluno ('+pend.length+')</h3>'+(pend.length ? '<div class="tw"><table><tr><th>Nome</th><th>Curso</th><th>Pendência</th></tr>'+pend.map(s => '<tr class="click" onclick="go(\'pessoa\',\''+s.pessoa_id+'\')"><td><b>'+esc(s.pessoas ? s.pessoas.nome : '')+'</b></td><td>'+esc(s.cursos ? s.cursos.sigla : '')+'</td><td class="small">'+esc(s.obs_escola || '')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma.</p>')+'</div>';
+  return h;
+}
+async function vPessoas(){
+  const t = S.busca.trim().replace(/[,()%]/g, ' ');
+  let consulta = sb.from('pessoas').select('id,nome,cpf,telefone,empresa_id,usuario_id').eq('escola_id', S.perfil.escola_id).order('nome').limit(100);
+  if(t){ const d = soDig(t); consulta = d.length >= 3 && d.length === t.replace(/\D/g, '').length && !/[a-z]/i.test(t) ? consulta.ilike('cpf', '%' + d + '%') : consulta.ilike('nome', '%' + t + '%'); }
+  const lista = await q(consulta);
+  return '<div class="bar"><h2 style="margin:0">Pessoas</h2><span class="sp"></span><button class="btn" onclick="modalNovaPessoa(\'\')">+ Cadastro no balcão</button></div>'+
+    '<div class="card"><div class="bar"><input id="bPes" placeholder="Buscar por nome ou CPF" value="'+esc(S.busca)+'" onkeydown="if(event.key===\'Enter\'){S.busca=this.value;recarregar()}" style="flex:1"><button class="btn nv" onclick="S.busca=document.getElementById(\'bPes\').value;recarregar()">Buscar</button></div>'+
+    (lista.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Origem</th></tr>'+lista.map(p => '<tr class="click" onclick="go(\'pessoa\',\''+p.id+'\')"><td><b>'+esc(p.nome)+'</b></td><td>'+fmtDoc(p.cpf)+'</td><td>'+esc(p.telefone || '—')+'</td><td class="small">'+(p.usuario_id ? 'Conta própria' : p.empresa_id && S.empresas[p.empresa_id] ? esc(S.empresas[p.empresa_id].nome) : 'Balcão')+'</td></tr>').join('')+'</table></div>'+(lista.length === 100 ? '<p class="small muted">Mostrando os 100 primeiros. Refine a busca.</p>' : '') : '<p class="muted">Ninguém encontrado.</p>')+'</div>';
+}
+async function vEmpresas(){
+  await carregarEmpresas();
+  const todas = Object.values(S.empresas);
+  const vincs = await buscarTodos(() => sb.from('pessoas').select('empresa_id').eq('escola_id', S.perfil.escola_id).not('empresa_id', 'is', null));
+  const n = {}; vincs.forEach(v => n[v.empresa_id] = (n[v.empresa_id] || 0) + 1);
+  return '<h2>Empresas</h2><div class="card">'+(todas.length ? '<div class="tw"><table><tr><th>Empresa</th><th>CNPJ</th><th>Contato</th><th>Vigilantes</th><th></th></tr>'+todas.map(e => '<tr class="click" onclick="go(\'vigilantes\',\''+e.id+'\')"><td><b>'+esc(e.nome)+'</b></td><td>'+fmtDoc(e.cpf_cnpj)+'</td><td class="small">'+esc(e.telefone || '')+'<br>'+esc(e.email || '')+'</td><td>'+(n[e.id] || 0)+'</td><td onclick="event.stopPropagation()">'+botoesContato({ id: null, telefone: e.telefone, email: e.email }, S.escola.nome, 'Olá, ' + e.nome + '!' + assinatura())+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma empresa cadastrada ainda. Envie o link do portal (no Painel) para as empresas clientes.</p>')+'</div>';
+}
+async function vCursos(){
+  await carregarCursos();
+  return '<div class="bar"><h2 style="margin:0">Cursos</h2><span class="sp"></span><button class="btn" onclick="editarCurso(\'\')">+ Novo curso</button></div>'+
+    '<div class="card"><p class="small muted" style="margin-top:0">Revise nomes, validade e documentos exigidos conforme as normas vigentes da PF. Cursos com o mesmo <b>grupo de validade</b> renovam a mesma validade (ex.: CFV e CAV no grupo VIGILANTE).</p><div class="tw"><table><tr><th>Sigla</th><th>Nome</th><th>Grupo</th><th>Validade</th><th>Documentos</th><th>Ativo</th></tr>'+
+    S.cursos.map(c => '<tr class="click" onclick="editarCurso(\''+c.id+'\')"><td><b>'+esc(c.sigla)+'</b></td><td>'+esc(c.nome)+'</td><td>'+esc(c.grupo_validade || '—')+'</td><td>'+(c.validade_meses ? c.validade_meses+' meses' : 'Sem validade')+'</td><td>'+(c.docs_exigidos || []).length+'</td><td>'+(c.ativo ? '<span class="bdg ok">Sim</span>' : '<span class="bdg">Não</span>')+'</td></tr>').join('')+'</table></div></div>';
+}
+function editarCurso(id){
+  const c = id ? curso(id) : { sigla:'', nome:'', grupo_validade:'', validade_meses:0, docs_exigidos:[], ativo:true };
+  abrirModal(id ? 'Editar curso' : 'Novo curso', '<div class="fgrid">'+
+    '<label class="f"><span>Sigla</span><input id="cuSigla" value="'+esc(c.sigla)+'"></label>'+
+    '<label class="f"><span>Ativo (aceita pré-matrícula)</span><select id="cuAtivo"><option value="1"'+(c.ativo ? ' selected' : '')+'>Sim</option><option value="0"'+(c.ativo ? '' : ' selected')+'>Não</option></select></label>'+
+    '<label class="f w"><span>Nome do curso</span><input id="cuNome" value="'+esc(c.nome)+'"></label>'+
+    '<label class="f"><span>Grupo de validade</span><input id="cuGrupo" value="'+esc(c.grupo_validade)+'" placeholder="ex.: VIGILANTE"></label>'+
+    '<label class="f"><span>Validade (meses, 0 = sem validade)</span><input id="cuMeses" type="number" min="0" value="'+esc(c.validade_meses)+'"></label>'+
+    '<label class="f w"><span>Documentos exigidos — um por linha. Comece com ? os que são "se aplicável".</span><textarea id="cuDocs" rows="9">'+esc((c.docs_exigidos || []).join('\n'))+'</textarea></label></div>',
+    '<button class="btn" onclick="salvarCurso(\''+id+'\',this)">Salvar</button>');
+}
+async function salvarCurso(id, btn){
+  const dados = { sigla: $('#cuSigla').value.trim().toUpperCase(), nome: $('#cuNome').value.trim(), grupo_validade: $('#cuGrupo').value.trim().toUpperCase() || null, validade_meses: Number($('#cuMeses').value || 0), ativo: $('#cuAtivo').value === '1', docs_exigidos: $('#cuDocs').value.split('\n').map(s => s.trim()).filter(Boolean) };
+  if(!dados.sigla || !dados.nome) return toast('Informe sigla e nome.', 'erro');
+  const solta = travar(btn);
+  try {
+    if(id) await q(sb.from('cursos').update(dados).eq('id', id));
+    else await q(sb.from('cursos').insert(Object.assign({ escola_id: S.perfil.escola_id }, dados)));
+    fecharModal(); toast('Curso salvo.'); recarregar();
+  } finally { solta(); }
+}
+async function vEscola(){
+  const e = S.escola;
+  return '<h2>Dados da escola</h2><div class="card"><div class="fgrid">'+
+    '<label class="f w"><span>Nome</span><input id="esNome" value="'+esc(e.nome)+'"></label>'+
+    '<label class="f"><span>CNPJ</span><input id="esCnpj" value="'+esc(e.cnpj)+'"></label>'+
+    '<label class="f"><span>WhatsApp de atendimento</span><input id="esWa" value="'+esc(e.whatsapp)+'"></label>'+
+    '<label class="f"><span>E-mail</span><input id="esEmail" value="'+esc(e.email)+'"></label>'+
+    '<label class="f w"><span>Endereço</span><input id="esEnd" value="'+esc(e.endereco)+'"></label></div>'+
+    '<button class="btn" onclick="salvarEscola(this)">Salvar</button></div><p class="small muted">FIEL Segurança Privada · versão '+VERSAO+'</p>';
+}
+async function salvarEscola(btn){
+  const dados = { nome: $('#esNome').value.trim(), cnpj: $('#esCnpj').value.trim(), whatsapp: $('#esWa').value.trim(), email: $('#esEmail').value.trim(), endereco: $('#esEnd').value.trim() };
+  const solta = travar(btn);
+  try { S.escola = await q(sb.from('escolas').update(dados).eq('id', S.escola.id).select().single()); toast('Dados salvos.'); } finally { solta(); }
+}
+async function vConta(){
+  const p = S.perfil;
+  return '<h2>Dados da empresa</h2><div class="card"><div class="fgrid">'+
+    '<label class="f w"><span>Razão social / nome</span><input id="ctNome" value="'+esc(p.nome)+'"></label>'+
+    '<label class="f"><span>CNPJ</span><input id="ctDoc" value="'+esc(fmtDoc(p.cpf_cnpj))+'"></label>'+
+    '<label class="f"><span>Telefone / WhatsApp</span><input id="ctTel" value="'+esc(p.telefone)+'"></label>'+
+    '<label class="f w"><span>E-mail de login</span><input value="'+esc(p.email)+'" disabled></label></div>'+
+    '<button class="btn" onclick="salvarConta(this)">Salvar</button></div>';
+}
+async function salvarConta(btn){
+  const doc = soDig($('#ctDoc').value);
+  if(doc && !cnpjValido(doc)) return toast('CNPJ inválido.', 'erro');
+  const solta = travar(btn);
+  try { S.perfil = await q(sb.from('perfis').update({ nome: $('#ctNome').value.trim(), cpf_cnpj: doc, telefone: $('#ctTel').value.trim() }).eq('id', S.perfil.id).select().single()); toast('Dados salvos.'); } finally { solta(); }
+}
+
+const VIEWS = { pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+
+/* recarrega a tela ao fechar o aviso pós-análise */
+const _fechar = fecharModal;
+fecharModal = function(){ _fechar(); if(S._recarregarAoFechar){ S._recarregarAoFechar = false; recarregar(); } };
+
+iniciar();
+</script>
+</body>
+</html>
