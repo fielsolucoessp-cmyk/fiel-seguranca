@@ -87,7 +87,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.1.0';
+const VERSAO = '1.2.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -137,7 +137,7 @@ const S = { sessao:null, perfil:null, escola:null, cursos:[], empresas:{}, minha
 const staff = () => !!S.perfil && ['staff','admin'].includes(S.perfil.tipo);
 const linkPortal = () => location.origin + location.pathname + (SLUG !== CONFIG.ESCOLA ? '?escola=' + encodeURIComponent(SLUG) : '');
 
-const SOL = { rascunho:['Rascunho',''], enviada:['Aguardando análise','warn'], pendente:['Pendência — corrigir','bad'], aprovada:['Aprovada','ok'], matriculada:['Matriculado','nv'], concluida:['Concluída','ok'], recusada:['Recusada','bad'], cancelada:['Cancelada',''] };
+const SOL = { rascunho:['Rascunho',''], enviada:['Aguardando análise','warn'], pendente:['Pendência — corrigir','bad'], aprovada:['Aprovada','ok'], matriculada:['Matriculado','nv'], concluida:['Concluída','ok'], reprovado:['Reprovado','bad'], recusada:['Recusada','bad'], cancelada:['Cancelada',''] };
 const DOCST = { falta:['Não enviado',''], enviado:['Em análise','warn'], aprovado:['Aprovado','ok'], recusado:['Recusado','bad'], vencido:['Vencido','bad'] };
 const bdg = (par) => '<span class="bdg '+par[1]+'">'+esc(par[0])+'</span>';
 function bdgValidade(iso){ const d = dias(iso); if(d === null) return '<span class="bdg">—</span>'; if(d < 0) return '<span class="bdg bad">Vencido em '+fmt(iso)+'</span>'; if(d <= 30) return '<span class="bdg bad">Vence em '+d+' dia(s)</span>'; if(d <= 90) return '<span class="bdg warn">Vence em '+fmt(iso)+'</span>'; return '<span class="bdg ok">Válido até '+fmt(iso)+'</span>'; }
@@ -299,7 +299,7 @@ async function salvarNovaSenha(btn){
 
 /* ================= NAVEGAÇÃO ================= */
 function menu(){
-  if(staff()) return [['painel','Painel'],['analise','Análise'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : []);
+  if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : []);
   if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
   return [['pessoa','Meu cadastro']];
 }
@@ -403,12 +403,12 @@ async function vPessoa(id){
   const [p, docs, sols, certs] = await Promise.all([
     q(sb.from('pessoas').select('*').eq('id', id).single()),
     q(sb.from('documentos').select('*').eq('pessoa_id', id).order('enviado_em', { ascending: false })),
-    q(sb.from('solicitacoes').select('*, cursos(sigla,nome,docs_exigidos)').eq('pessoa_id', id).order('criado_em', { ascending: false })),
+    q(sb.from('solicitacoes').select('*, cursos(sigla,nome,docs_exigidos), turmas(codigo,inicio,fim,turno,local)').eq('pessoa_id', id).order('criado_em', { ascending: false })),
     q(sb.from('certificacoes').select('*, cursos(sigla,nome,validade_meses)').eq('pessoa_id', id).order('data_conclusao', { ascending: false }))
   ]);
   S.pessoa = { p, docs, sols, certs };
   const souAluno = S.perfil.tipo === 'aluno';
-  const ativas = sols.filter(s => !['cancelada','recusada','concluida'].includes(s.status));
+  const ativas = sols.filter(s => !['cancelada','recusada','concluida','reprovado'].includes(s.status));
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? 'Meu cadastro' : p.nome)+'</h2><span class="sp"></span>';
   if(staff()) h += botoesContato(p, 'Escola — ' + p.nome, 'Olá, ' + p.nome.split(' ')[0] + '!' + assinatura()) + ' <button class="btn dg sm" onclick="excluirPessoa(\''+p.id+'\')">Excluir</button>';
   h += '</div>';
@@ -461,9 +461,10 @@ function cardSolicitacao(s){
   const editavel = !staff() && ['rascunho','pendente'].includes(s.status);
   let h = '<div class="sol"><h4>'+esc(c.sigla || '')+' — '+esc(c.nome || '')+' '+bdg(SOL[s.status])+'</h4>';
   h += '<div class="small muted">Criada em '+fmt(s.criado_em)+(s.enviada_em ? ' · enviada em '+fmt(s.enviada_em) : '')+(s.obs ? ' · obs.: '+esc(s.obs) : '')+'</div>';
+  if(s.turmas) h += '<div class="aviso ok" style="margin-top:8px"><b>Turma '+esc(s.turmas.codigo)+'</b> · '+fmt(s.turmas.inicio)+' a '+fmt(s.turmas.fim)+(s.turmas.turno ? ' · '+esc(s.turmas.turno) : '')+(s.turmas.local ? ' · '+esc(s.turmas.local) : '')+'</div>';
   if(s.obs_escola) h += '<div class="aviso '+(s.status === 'pendente' || s.status === 'recusada' ? 'bad' : 'ok')+'" style="margin-top:8px"><b>Retorno da escola:</b> '+esc(s.obs_escola)+'</div>';
   if(s.status === 'enviada' && !staff()) h += '<div class="aviso" style="margin-top:8px">Recebemos sua pré-matrícula. A escola vai analisar os documentos e você verá o resultado aqui.</div>';
-  if(!['cancelada','recusada','concluida'].includes(s.status) && lista.length){
+  if(!['cancelada','recusada','concluida','reprovado'].includes(s.status) && lista.length){
     h += '<div class="tw" style="margin-top:8px"><table><tr><th>Documento exigido</th><th>Situação</th><th></th></tr>'+lista.map(x => {
       const d = docAtual(x.nome), st = estadoDoc(d);
       const podeEnviar = st !== 'aprovado' && (staff() || ['rascunho','pendente','enviada'].includes(s.status));
@@ -708,28 +709,33 @@ async function vVencimentos(){
 async function vPainel(){
   const eid = S.perfil.escola_id, hoje = hojeISO();
   const cnt = async (montar) => { const { count, error } = await montar; if(error) throw error; return count || 0; };
-  const [aguard, docs, pend, pessoas, venc30] = await Promise.all([
+  const [aguard, docs, pend, pessoas, venc30, semTurma, turmasAnd] = await Promise.all([
     cnt(sb.from('solicitacoes').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'enviada')),
     cnt(sb.from('documentos').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'enviado')),
     cnt(sb.from('solicitacoes').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'pendente')),
     cnt(sb.from('pessoas').select('id', { count: 'exact', head: true }).eq('escola_id', eid)),
-    cnt(sb.from('v_validades').select('pessoa_id', { count: 'exact', head: true }).eq('escola_id', eid).lte('vence_em', addDias(hoje, 30)).gte('vence_em', addDias(hoje, -365)))
+    cnt(sb.from('v_validades').select('pessoa_id', { count: 'exact', head: true }).eq('escola_id', eid).lte('vence_em', addDias(hoje, 30)).gte('vence_em', addDias(hoje, -365))),
+    cnt(sb.from('solicitacoes').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'aprovada').is('turma_id', null)),
+    cnt(sb.from('turmas').select('id', { count: 'exact', head: true }).eq('escola_id', eid).in('status', ['planejada','andamento']))
   ]);
   const k = (t, v, view, cor) => '<div class="kpi" onclick="irMenu(\''+view+'\')"><span>'+t+'</span><b style="color:'+(v && cor ? cor : 'inherit')+'">'+v+'</b></div>';
   return '<h2>Painel</h2><div class="kpis">'+
     k('Pré-matrículas aguardando análise', aguard, 'analise', 'var(--or)')+
     k('Documentos aguardando análise', docs, 'analise', 'var(--or)')+
     k('Pré-matrículas com pendência (aguardando aluno)', pend, 'analise')+
+    k('Aprovados aguardando turma', semTurma, 'turmas', 'var(--or)')+
+    k('Turmas abertas', turmasAnd, 'turmas')+
     k('Cursos vencidos ou vencendo em 30 dias', venc30, 'vencimentos', 'var(--bad)')+
     k('Pessoas cadastradas', pessoas, 'pessoas')+
     '</div><div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
 }
 async function vAnalise(){
   const eid = S.perfil.escola_id;
-  const [sols, docs, pend] = await Promise.all([
+  const [sols, docs, pend, aprov] = await Promise.all([
     q(sb.from('solicitacoes').select('id,pessoa_id,enviada_em,status,pessoas(nome,cpf,empresa_id),cursos(sigla)').eq('escola_id', eid).eq('status', 'enviada').order('enviada_em')),
     q(sb.from('documentos').select('pessoa_id,tipo,enviado_em,pessoas(nome)').eq('escola_id', eid).eq('status', 'enviado').order('enviado_em').limit(500)),
-    q(sb.from('solicitacoes').select('id,pessoa_id,criado_em,obs_escola,pessoas(nome),cursos(sigla)').eq('escola_id', eid).eq('status', 'pendente').order('criado_em'))
+    q(sb.from('solicitacoes').select('id,pessoa_id,criado_em,obs_escola,pessoas(nome),cursos(sigla)').eq('escola_id', eid).eq('status', 'pendente').order('criado_em')),
+    q(sb.from('solicitacoes').select('curso_id,cursos(sigla,nome)').eq('escola_id', eid).eq('status', 'aprovada').is('turma_id', null))
   ]);
   const porPessoa = {}; docs.forEach(d => { (porPessoa[d.pessoa_id] = porPessoa[d.pessoa_id] || { nome: d.pessoas ? d.pessoas.nome : '', n: 0, desde: d.enviado_em }).n++; });
   const emp = id => id && S.empresas[id] ? S.empresas[id].nome : 'Particular';
@@ -738,6 +744,9 @@ async function vAnalise(){
   const pp = Object.entries(porPessoa);
   h += '<div class="card"><h3>Documentos novos aguardando análise ('+docs.length+')</h3>'+(pp.length ? '<div class="tw"><table><tr><th>Nome</th><th>Documentos</th><th>Desde</th></tr>'+pp.map(([id, x]) => '<tr class="click" onclick="go(\'pessoa\',\''+id+'\')"><td><b>'+esc(x.nome)+'</b></td><td>'+x.n+'</td><td>'+fmt(x.desde)+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum.</p>')+'</div>';
   h += '<div class="card"><h3>Com pendência, aguardando o aluno ('+pend.length+')</h3>'+(pend.length ? '<div class="tw"><table><tr><th>Nome</th><th>Curso</th><th>Pendência</th></tr>'+pend.map(s => '<tr class="click" onclick="go(\'pessoa\',\''+s.pessoa_id+'\')"><td><b>'+esc(s.pessoas ? s.pessoas.nome : '')+'</b></td><td>'+esc(s.cursos ? s.cursos.sigla : '')+'</td><td class="small">'+esc(s.obs_escola || '')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma.</p>')+'</div>';
+  const porCurso = {}; aprov.forEach(a => { const k = a.cursos ? a.cursos.sigla + ' — ' + a.cursos.nome : '?'; porCurso[k] = (porCurso[k] || 0) + 1; });
+  const pc = Object.entries(porCurso);
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Aprovados aguardando turma ('+aprov.length+')</h3><span class="sp"></span>'+(aprov.length ? '<button class="btn nv sm" onclick="irMenu(\'turmas\')">Ir para Turmas</button>' : '')+'</div>'+(pc.length ? '<div class="tw"><table><tr><th>Curso</th><th>Alunos</th></tr>'+pc.map(([c, n]) => '<tr><td>'+esc(c)+'</td><td>'+n+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum.</p>')+'</div>';
   return h;
 }
 async function vPessoas(){
@@ -814,6 +823,154 @@ async function salvarConta(btn){
   try { S.perfil = await q(sb.from('perfis').update({ nome: $('#ctNome').value.trim(), cpf_cnpj: doc, telefone: $('#ctTel').value.trim() }).eq('id', S.perfil.id).select().single()); toast('Dados salvos.'); } finally { solta(); }
 }
 
+/* ================= TURMAS ================= */
+const TST = { planejada:['Planejada','nv'], andamento:['Em andamento','warn'], concluida:['Concluída','ok'], cancelada:['Cancelada',''] };
+const TURNOS = ['Manhã','Tarde','Noite','Integral','Fim de semana'];
+const gespN = t => ['gesp_inicio','gesp_alunos','gesp_conclusao'].filter(k => t[k]).length;
+async function vTurmas(){
+  const eid = S.perfil.escola_id, todas = S.filtroTurmas === 'todas';
+  let cons = sb.from('turmas').select('*, cursos(sigla,nome)').eq('escola_id', eid).order('inicio', { ascending: false }).limit(300);
+  if(!todas) cons = cons.in('status', ['planejada','andamento']);
+  const lista = await q(cons);
+  const ids = lista.map(t => t.id), cont = {};
+  if(ids.length){ const m = await q(sb.from('solicitacoes').select('turma_id').in('turma_id', ids)); m.forEach(x => cont[x.turma_id] = (cont[x.turma_id] || 0) + 1); }
+  const { count: semTurma } = await sb.from('solicitacoes').select('id', { count: 'exact', head: true }).eq('escola_id', eid).eq('status', 'aprovada').is('turma_id', null);
+  let h = '<div class="bar"><h2 style="margin:0">Turmas</h2><span class="sp"></span><select style="max-width:190px" onchange="S.filtroTurmas=this.value;recarregar()"><option value="abertas"'+(todas ? '' : ' selected')+'>Abertas</option><option value="todas"'+(todas ? ' selected' : '')+'>Todas (inclui concluídas)</option></select><button class="btn" onclick="modalTurma(\'\')">+ Nova turma</button></div>';
+  if(semTurma) h += '<div class="aviso"><b>'+semTurma+'</b> aluno(s) aprovado(s) aguardando turma. Abra (ou crie) a turma do curso e use "Adicionar alunos aprovados".</div>';
+  h += '<div class="card">'+(lista.length ? '<div class="tw"><table><tr><th>Turma</th><th>Curso</th><th>Período</th><th>Turno</th><th>Alunos</th><th>GESP</th><th>Situação</th></tr>'+lista.map(t => {
+    const n = gespN(t);
+    return '<tr class="click" onclick="go(\'turma\',\''+t.id+'\')"><td><b>'+esc(t.codigo)+'</b></td><td>'+esc(t.cursos ? t.cursos.sigla : '')+'</td><td>'+fmt(t.inicio)+' a '+fmt(t.fim)+'</td><td>'+esc(t.turno || '—')+'</td><td>'+(cont[t.id] || 0)+(t.vagas ? ' / '+t.vagas : '')+'</td><td><span class="bdg '+(n === 3 ? 'ok' : n ? 'warn' : '')+'">'+n+'/3</span></td><td>'+bdg(TST[t.status])+'</td></tr>';
+  }).join('')+'</table></div>' : '<p class="muted">Nenhuma turma '+(todas ? 'cadastrada' : 'aberta')+'.</p>')+'</div>';
+  return h;
+}
+function modalTurma(id){
+  const t = id && S.turma && S.turma.t.id === id ? S.turma.t : { codigo:'', curso_id: (S.cursos.find(c => c.ativo) || S.cursos[0] || {}).id, inicio:'', fim:'', turno:'', local:'', vagas:'', instrutores:'', status:'planejada', obs:'' };
+  const sel = (v, ops) => ops.map(([k, l]) => '<option value="'+esc(k)+'"'+(String(k) === String(v || '') ? ' selected' : '')+'>'+esc(l)+'</option>').join('');
+  abrirModal(id ? 'Editar turma' : 'Nova turma', '<div class="fgrid">'+
+    '<label class="f"><span>Curso</span><select id="tuCurso" '+(id ? 'disabled' : '')+' onchange="sugerirCodigo()">'+sel(t.curso_id, S.cursos.map(c => [c.id, c.sigla+' — '+c.nome]))+'</select></label>'+
+    '<label class="f"><span>Código da turma</span><input id="tuCod" value="'+esc(t.codigo)+'" placeholder="ex.: CFV-2026-01"></label>'+
+    '<label class="f"><span>Início</span><input id="tuIni" type="date" value="'+esc(t.inicio)+'"></label>'+
+    '<label class="f"><span>Término</span><input id="tuFim" type="date" value="'+esc(t.fim)+'"></label>'+
+    '<label class="f"><span>Turno</span><select id="tuTurno">'+sel(t.turno, [['','—']].concat(TURNOS.map(x => [x, x])))+'</select></label>'+
+    '<label class="f"><span>Vagas</span><input id="tuVagas" type="number" min="1" value="'+esc(t.vagas)+'"></label>'+
+    '<label class="f w"><span>Local / sala</span><input id="tuLocal" value="'+esc(t.local)+'"></label>'+
+    '<label class="f w"><span>Instrutores</span><input id="tuInst" value="'+esc(t.instrutores)+'" placeholder="nomes separados por vírgula"></label>'+
+    '<label class="f"><span>Situação</span><select id="tuSt" '+(t.status === 'concluida' ? 'disabled' : '')+'>'+sel(t.status, Object.entries(TST).filter(([k]) => k !== 'concluida' || t.status === 'concluida').map(([k, v]) => [k, v[0]]))+'</select></label>'+
+    '<label class="f w"><span>Observações</span><textarea id="tuObs" rows="2">'+esc(t.obs)+'</textarea></label></div>',
+    '<button class="btn" onclick="salvarTurma(\''+(id || '')+'\',this)">Salvar</button>');
+  if(!id) sugerirCodigo();
+}
+async function sugerirCodigo(){
+  const c = curso($('#tuCurso').value), ano = hojeISO().slice(0, 4);
+  const { count } = await sb.from('turmas').select('id', { count: 'exact', head: true }).eq('curso_id', c.id).gte('inicio', ano + '-01-01');
+  const el = $('#tuCod'); if(el && (!el.value || el.dataset.auto)){ el.value = (c.sigla || 'TURMA') + '-' + ano + '-' + String((count || 0) + 1).padStart(2, '0'); el.dataset.auto = '1'; }
+}
+async function salvarTurma(id, btn){
+  const dados = { codigo: $('#tuCod').value.trim(), inicio: $('#tuIni').value || null, fim: $('#tuFim').value || null, turno: $('#tuTurno').value || null, local: $('#tuLocal').value.trim() || null, vagas: $('#tuVagas').value ? Number($('#tuVagas').value) : null, instrutores: $('#tuInst').value.trim() || null, obs: $('#tuObs').value.trim() || null };
+  if(!$('#tuSt').disabled) dados.status = $('#tuSt').value;
+  if(!dados.codigo) return toast('Informe o código da turma.', 'erro');
+  if(dados.inicio && dados.fim && dados.fim < dados.inicio) return toast('O término não pode ser antes do início.', 'erro');
+  const solta = travar(btn);
+  try {
+    if(id){ await q(sb.from('turmas').update(dados).eq('id', id)); fecharModal(); toast('Turma salva.'); recarregar(); }
+    else { const nova = await q(sb.from('turmas').insert(Object.assign({ escola_id: S.perfil.escola_id, curso_id: $('#tuCurso').value }, dados)).select('id').single()); fecharModal(); toast('Turma criada.'); go('turma', nova.id); }
+  } finally { solta(); }
+}
+async function vTurma(id){
+  const t = await q(sb.from('turmas').select('*, cursos(sigla,nome)').eq('id', id).single());
+  const [mats, disp] = await Promise.all([
+    q(sb.from('solicitacoes').select('id,status,frequencia,nota,resultado,pessoa_id,pessoas(nome,cpf,rg,nascimento,sexo,escolaridade,telefone,email,endereco,empresa_id)').eq('turma_id', id)),
+    q(sb.from('solicitacoes').select('id,pessoa_id,criado_em,pessoas(nome,cpf,empresa_id)').eq('escola_id', t.escola_id).eq('curso_id', t.curso_id).eq('status', 'aprovada').is('turma_id', null))
+  ]);
+  mats.sort((a, b) => (a.pessoas ? a.pessoas.nome : '').localeCompare(b.pessoas ? b.pessoas.nome : ''));
+  S.turma = { t, mats };
+  const fechada = t.status === 'concluida' || t.status === 'cancelada';
+  const emp = id => id && S.empresas[id] ? S.empresas[id].nome : 'Particular';
+  let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(t.codigo)+' '+bdg(TST[t.status])+'</h2><span class="sp"></span>'+
+    '<button class="btn sec sm" onclick="modalTurma(\''+t.id+'\')">Editar</button><button class="btn nv sm" onclick="exportarTurma()">Planilha para o GESP</button><button class="btn nv sm" onclick="listaPresenca()">Lista de presença</button>'+
+    (fechada ? '' : '<button class="btn ok sm" onclick="concluirTurma(\''+t.id+'\',this)">Concluir turma</button>')+'</div>';
+  h += '<div class="card"><div class="kpis" style="margin:0">'+
+    '<div class="kpi" style="cursor:default"><span>Curso</span><b style="font-size:18px">'+esc(t.cursos ? t.cursos.sigla : '')+'</b><span>'+esc(t.cursos ? t.cursos.nome : '')+'</span></div>'+
+    '<div class="kpi" style="cursor:default"><span>Período</span><b style="font-size:18px">'+fmt(t.inicio)+' a '+fmt(t.fim)+'</b><span>'+esc(t.turno || '')+'</span></div>'+
+    '<div class="kpi" style="cursor:default"><span>Alunos</span><b>'+mats.length+(t.vagas ? '<span style="font-size:15px"> / '+t.vagas+' vagas</span>' : '')+'</b></div>'+
+    '<div class="kpi" style="cursor:default"><span>Local · Instrutores</span><b style="font-size:15px">'+esc(t.local || '—')+'</b><span>'+esc(t.instrutores || '—')+'</span></div></div></div>';
+  const g = [['gesp_inicio','Início do curso comunicado no GESP'],['gesp_alunos','Alunos cadastrados no GESP'],['gesp_conclusao','Conclusão comunicada no GESP']];
+  h += '<div class="card"><h3>Checklist GESP</h3>'+g.map(([k, l]) => '<label class="chk" style="font-size:15px;padding:6px 0;border-bottom:1px dashed var(--bd);margin:0"><input type="checkbox"'+(t[k] ? ' checked' : '')+' onchange="marcarGesp(\''+t.id+'\',\''+k+'\',this.checked)"> <span style="flex:1">'+l+'</span>'+(t[k] ? '<span class="small muted">em '+fmt(t[k])+'</span>' : '')+'</label>').join('')+'</div>';
+  const ap = mats.filter(m => m.resultado === 'aprovado').length, rp = mats.filter(m => m.resultado === 'reprovado').length;
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Alunos da turma ('+mats.length+')</h3><span class="sp"></span><span class="small muted">'+ap+' aprovado(s) · '+rp+' reprovado(s) · '+(mats.length - ap - rp)+' sem resultado</span></div>';
+  h += mats.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Freq. %</th><th>Nota</th><th>Resultado</th><th>Situação</th><th></th></tr>'+mats.map(m => {
+    const p = m.pessoas || {}, dis = fechada || m.status !== 'matriculada' ? ' disabled' : '';
+    return '<tr><td><a href="#" onclick="go(\'pessoa\',\''+m.pessoa_id+'\');return false"><b>'+esc(p.nome)+'</b></a></td><td>'+fmtDoc(p.cpf)+'</td><td class="small">'+esc(emp(p.empresa_id))+'</td>'+
+      '<td><input type="number" min="0" max="100" step="0.1" style="width:80px" value="'+esc(m.frequencia ?? '')+'"'+dis+' onchange="salvarMat(\''+m.id+'\',\'frequencia\',this.value)"></td>'+
+      '<td><input type="number" min="0" max="10" step="0.1" style="width:80px" value="'+esc(m.nota ?? '')+'"'+dis+' onchange="salvarMat(\''+m.id+'\',\'nota\',this.value)"></td>'+
+      '<td><select style="width:130px"'+dis+' onchange="salvarMat(\''+m.id+'\',\'resultado\',this.value)"><option value="">—</option><option value="aprovado"'+(m.resultado === 'aprovado' ? ' selected' : '')+'>Aprovado</option><option value="reprovado"'+(m.resultado === 'reprovado' ? ' selected' : '')+'>Reprovado</option></select></td>'+
+      '<td>'+bdg(SOL[m.status] || ['—',''])+'</td><td>'+(dis ? '' : '<button class="btn sec sm" title="Tirar da turma" onclick="tirarDaTurma(\''+m.id+'\')">✕</button>')+'</td></tr>';
+  }).join('')+'</table></div>' : '<p class="muted">Nenhum aluno nesta turma ainda.</p>';
+  h += '</div>';
+  if(!fechada){
+    const livres = t.vagas ? Math.max(0, t.vagas - mats.length) : null;
+    h += '<div class="card"><div class="bar"><h3 style="margin:0">Adicionar alunos aprovados ('+disp.length+')</h3><span class="sp"></span>'+(livres !== null ? '<span class="small muted">'+livres+' vaga(s) livre(s)</span>' : '')+'</div>';
+    h += disp.length ? '<p class="small muted" style="margin-top:0">Alunos com pré-matrícula <b>aprovada</b> neste curso e ainda sem turma.</p><div class="tw"><table><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.selMat\').forEach(c=>c.checked=this.checked)"></th><th>Nome</th><th>CPF</th><th>Empresa</th><th>Pré-matrícula</th></tr>'+disp.map(d => '<tr><td><input type="checkbox" class="selMat" value="'+d.id+'"></td><td>'+esc(d.pessoas ? d.pessoas.nome : '')+'</td><td>'+fmtDoc(d.pessoas ? d.pessoas.cpf : '')+'</td><td class="small">'+esc(emp(d.pessoas && d.pessoas.empresa_id))+'</td><td>'+fmt(d.criado_em)+'</td></tr>').join('')+'</table></div><button class="btn" style="margin-top:10px" onclick="matricularSel(\''+t.id+'\',this)">Matricular selecionados</button>'
+      : '<p class="muted">Nenhum aluno aprovado aguardando turma neste curso.</p>';
+    h += '</div>';
+  }
+  if(t.obs) h += '<p class="small muted">Obs.: '+esc(t.obs)+'</p>';
+  return h;
+}
+async function marcarGesp(id, campo, marcado){ await q(sb.from('turmas').update({ [campo]: marcado ? hojeISO() : null }).eq('id', id)); recarregar(); }
+async function salvarMat(id, campo, valor){
+  let v = valor === '' ? null : valor;
+  if(v !== null && campo !== 'resultado'){ v = Number(String(v).replace(',', '.')); const max = campo === 'frequencia' ? 100 : 10; if(isNaN(v) || v < 0 || v > max) return toast('Valor inválido (0 a '+max+').', 'erro'); }
+  await q(sb.from('solicitacoes').update({ [campo]: v }).eq('id', id));
+  const m = S.turma.mats.find(x => x.id === id); if(m) m[campo] = v;
+  if(campo === 'resultado') recarregar(); else toast('Salvo.');
+}
+async function matricularSel(turmaId, btn){
+  const ids = [...document.querySelectorAll('.selMat:checked')].map(c => c.value);
+  if(!ids.length) return toast('Selecione pelo menos um aluno.', 'erro');
+  const t = S.turma.t;
+  if(t.vagas && S.turma.mats.length + ids.length > t.vagas && !confirm('Isso passa do limite de '+t.vagas+' vagas. Matricular mesmo assim?')) return;
+  const solta = travar(btn, 'Matriculando...');
+  try { await q(sb.from('solicitacoes').update({ turma_id: turmaId, status: 'matriculada' }).in('id', ids)); toast(ids.length+' aluno(s) matriculado(s).'); recarregar(); } finally { solta(); }
+}
+async function tirarDaTurma(id){
+  if(!confirm('Tirar este aluno da turma? Ele volta para a lista de aprovados aguardando turma.')) return;
+  await q(sb.from('solicitacoes').update({ turma_id: null, status: 'aprovada', frequencia: null, nota: null, resultado: null }).eq('id', id));
+  recarregar();
+}
+async function concluirTurma(id, btn){
+  const { t, mats } = S.turma;
+  const ativos = mats.filter(m => m.status === 'matriculada'), sem = ativos.filter(m => !m.resultado).length;
+  if(!t.fim) return toast('Informe a data de término da turma (Editar) antes de concluir.', 'erro');
+  if(!ativos.length) return toast('Não há alunos matriculados nesta turma.', 'erro');
+  if(sem) return toast('Defina o resultado de todos os alunos. Faltam '+sem+'.', 'erro');
+  const ap = ativos.filter(m => m.resultado === 'aprovado').length;
+  if(!confirm('Concluir a turma '+t.codigo+'?\n\n'+ap+' aprovado(s) receberão o curso concluído em '+fmt(t.fim)+' (com cálculo de validade).\n'+(ativos.length - ap)+' reprovado(s).\n\nEssa ação não pode ser desfeita.')) return;
+  const solta = travar(btn, 'Concluindo...');
+  try { const r = await q(sb.rpc('concluir_turma', { p_turma: id })); toast('Turma concluída: '+r.aprovados+' aprovado(s), '+r.reprovados+' reprovado(s).'); recarregar(); } finally { solta(); }
+}
+function baixarArquivo(nome, conteudo, tipo){ const b = new Blob([conteudo], { type: tipo }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nome; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
+function exportarTurma(){
+  const { t, mats } = S.turma; if(!mats.length) return toast('Turma sem alunos.', 'erro');
+  const c = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const linhas = [['Nº','Nome','CPF','RG','Data de nascimento','Sexo','Escolaridade','Telefone','E-mail','Endereço','Empresa','Frequência %','Nota','Resultado']].concat(mats.map((m, i) => { const p = m.pessoas || {}; return [i + 1, p.nome, fmtDoc(p.cpf), p.rg, p.nascimento ? fmt(p.nascimento) : '', p.sexo, p.escolaridade, p.telefone, p.email, p.endereco, p.empresa_id && S.empresas[p.empresa_id] ? S.empresas[p.empresa_id].nome : '', m.frequencia, m.nota, m.resultado ? (m.resultado === 'aprovado' ? 'Aprovado' : 'Reprovado') : '']; }));
+  baixarArquivo('turma_' + t.codigo.replace(/[^\w-]+/g, '_') + '.csv', '﻿' + linhas.map(l => l.map(c).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+}
+function imprimir(html){
+  let f = document.getElementById('pframe');
+  if(!f){ f = document.createElement('iframe'); f.id = 'pframe'; f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0'; document.body.appendChild(f); }
+  const d = f.contentDocument; d.open(); d.write(html); d.close();
+  setTimeout(() => { f.contentWindow.focus(); f.contentWindow.print(); }, 400);
+}
+function listaPresenca(){
+  const { t, mats } = S.turma; if(!mats.length) return toast('Turma sem alunos.', 'erro');
+  imprimir('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Lista de presença</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:18px}h2,p{margin:3px 0}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border:1px solid #777;padding:7px 5px;text-align:left}th{background:#eee}</style></head><body>'+
+    '<h2>'+esc(S.escola ? S.escola.nome : '')+'</h2><p><b>Lista de presença — '+esc(t.cursos ? t.cursos.sigla + ' — ' + t.cursos.nome : '')+'</b></p>'+
+    '<p>Turma: <b>'+esc(t.codigo)+'</b> · Período: '+fmt(t.inicio)+' a '+fmt(t.fim)+(t.turno ? ' · '+esc(t.turno) : '')+(t.local ? ' · '+esc(t.local) : '')+'</p>'+
+    '<p>Data: ____/____/________ · Disciplina: ______________________________ · Instrutor: ______________________________</p>'+
+    '<table><tr><th style="width:30px">Nº</th><th>Nome</th><th style="width:120px">CPF</th><th style="width:240px">Assinatura</th></tr>'+mats.map((m, i) => '<tr><td>'+(i + 1)+'</td><td>'+esc(m.pessoas ? m.pessoas.nome : '')+'</td><td>'+fmtDoc(m.pessoas ? m.pessoas.cpf : '')+'</td><td></td></tr>').join('')+'</table></body></html>');
+}
+
 const FUNCAO = { admin: 'Administrador', staff: 'Equipe da escola', aluno: 'Aluno', empresa: 'Empresa' };
 async function vEquipe(){
   if(S.perfil.tipo !== 'admin') return '<div class="card">Somente o administrador acessa esta tela.</div>';
@@ -841,7 +998,7 @@ async function definirFuncao(id, tipo){
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
