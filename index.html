@@ -39,6 +39,9 @@ h2{margin:4px 0 14px;font-size:20px}h3{margin:0 0 12px;font-size:16px}
 header .logo{background:#fff;border-radius:6px;padding:2px 4px}
 .cores{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.cores input[type=color]{width:48px;height:36px;padding:2px;border:1px solid var(--bd);border-radius:6px}
 #btnInstalar{display:none}
+.prog{height:10px;background:#e8ebf2;border-radius:6px;overflow:hidden;margin:4px 0}.prog>i{display:block;height:100%;background:var(--ok)}
+.cham{display:flex;align-items:center;gap:12px;padding:12px 10px;border:1px solid var(--bd);border-radius:10px;margin-bottom:8px;cursor:pointer;user-select:none;font-size:16px}.cham.falta{background:#fdeeee;border-color:#f3b4b4}.cham .st{margin-left:auto;font-weight:700}
+.secao{margin:14px 0 6px;font-size:14px;text-transform:uppercase;color:var(--mut);letter-spacing:.3px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 input,select,textarea{font:inherit;padding:9px 10px;border:1px solid var(--bd);border-radius:8px;width:100%;background:#fff;color:var(--tx)}
 label.f{display:block;margin-bottom:10px}label.f span{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
@@ -103,7 +106,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.7.0';
+const VERSAO = '1.8.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -218,14 +221,18 @@ async function entrar(sessao){
     if(S.escola && S.escola.ativa === false && !S.dono){ $('#app').innerHTML = '<div class="auth"><div class="auth-box">'+logoHtml()+'<div class="brand">FIEL <b>Segurança Privada</b></div><div class="aviso bad" style="margin-top:16px">O acesso ao portal de <b>'+esc(S.escola.nome)+'</b> está temporariamente suspenso. Fale diretamente com a escola.</div><button class="btn sec" onclick="sair()">Sair</button></div></div>'; return; }
     await carregarCursos();
     if(staff()) await carregarEmpresas();
+    if(staff()) await carregarInstrutores();
     if(perfil.tipo === 'aluno'){ const p = await q(sb.from('pessoas').select('id').eq('usuario_id', perfil.id).limit(1)); S.minhaPessoa = p[0] ? p[0].id : null; }
     S.hist = [];
     if(staff()) go('painel', null, false);
     else if(perfil.tipo === 'empresa') go('vigilantes', null, false);
+    else if(perfil.tipo === 'instrutor') go('aulas', null, false);
     else go('pessoa', S.minhaPessoa, false);
   } catch(e){ console.error(e); }
 }
 async function carregarCursos(){ S.cursos = await q(sb.from('cursos').select('*').eq('escola_id', S.perfil.escola_id).order('sigla')); }
+async function carregarInstrutores(){ S.instrutores = await q(sb.from('perfis').select('id,nome,email').eq('tipo','instrutor').eq('escola_id', S.perfil.escola_id).order('nome')); }
+const nomeInstrutor = id => { const i = (S.instrutores || []).find(x => x.id === id); return i ? (i.nome || i.email) : ''; };
 async function carregarEmpresas(){ const l = await q(sb.from('perfis').select('id,nome,cpf_cnpj,telefone,email').eq('tipo','empresa').eq('escola_id', S.perfil.escola_id).order('nome')); S.empresas = {}; l.forEach(e => S.empresas[e.id] = e); }
 async function sair(){ await sb.auth.signOut(); S.perfil = null; S.sessao = null; telaAuth('entrar'); }
 
@@ -336,7 +343,8 @@ async function salvarNovaSenha(btn){
 /* ================= NAVEGAÇÃO ================= */
 function menu(){
   const dono = S.dono ? [['fiel','FIEL']] : [];
-  if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : [], dono);
+  if(S.perfil.tipo === 'instrutor') return [['aulas','Minhas aulas']];
+  if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : [], dono);
   if(S.dono) return dono;
   if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
   return [['pessoa','Meu cadastro']];
@@ -534,12 +542,11 @@ async function vPessoa(id){
     q(sb.from('pessoas').select('*').eq('id', id).single()),
     q(sb.from('documentos').select('*').eq('pessoa_id', id).order('enviado_em', { ascending: false })),
     q(sb.from('solicitacoes').select('*, cursos(sigla,nome,docs_exigidos), turmas(codigo,inicio,fim,turno,local)').eq('pessoa_id', id).order('criado_em', { ascending: false })),
-    q(sb.from('certificacoes').select('*, cursos(sigla,nome,validade_meses)').eq('pessoa_id', id).order('data_conclusao', { ascending: false }))
+    q(sb.from('certificacoes').select('*, cursos(sigla,nome,validade_meses,grupo_validade)').eq('pessoa_id', id).order('data_conclusao', { ascending: false }))
   ]);
   S.pessoa = { p, docs, sols, certs };
   for(const s of sols.filter(s => s.status === 'aprovada' && !s.turma_id)){ const r = await sb.rpc('posicao_fila', { p_solicitacao: s.id }); s._fila = r.error ? null : r.data; }
-  const turmaAtual = sols.find(s => s.status === 'matriculada' && s.turma_id);
-  const aulasAluno = turmaAtual && !staff() ? await q(sb.from('aulas').select('data,inicio,fim,horas,instrutor,conteudo,disciplinas(nome)').eq('turma_id', turmaAtual.turma_id).order('data').order('inicio')) : [];
+  if(!staff()) for(const s of sols.filter(s => s.status === 'matriculada' && s.turma_id)){ const r = await sb.rpc('meu_andamento', { p_solicitacao: s.id }); s._and = r.error ? null : r.data; }
   const souAluno = S.perfil.tipo === 'aluno';
   const ativas = sols.filter(s => !['cancelada','recusada','concluida','reprovado'].includes(s.status));
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? 'Meu cadastro' : p.nome)+'</h2><span class="sp"></span>';
@@ -548,6 +555,7 @@ async function vPessoa(id){
   h += '</div>';
   if(!staff() && !sols.length) h += '<div class="passos"><div><b>Passo 1</b>Confira e complete seus dados</div><div><b>Passo 2</b>Crie a pré-matrícula no curso desejado</div><div><b>Passo 3</b>Envie os documentos pedidos</div><div><b>Passo 4</b>Clique em "Enviar para análise"</div></div>';
   if(staff() && p.empresa_id && S.empresas[p.empresa_id]) h += '<div class="aviso">Cadastrado pela empresa <b>'+esc(S.empresas[p.empresa_id].nome)+'</b>.</div>';
+  if(!staff() && (sols.length || certs.length)) h += cardMeusCursos(sols, certs);
   // pré-matrículas
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Pré-matrículas</h3><span class="sp"></span><button class="btn" onclick="novaSolicitacao()">+ Nova pré-matrícula</button></div>';
   h += sols.length ? sols.map(s => cardSolicitacao(s)).join('') : '<p class="muted">Nenhuma pré-matrícula ainda.</p>';
@@ -562,7 +570,6 @@ async function vPessoa(id){
       (staff() ? (c.verificado ? '' : '<button class="btn ok sm" onclick="conferirCert(\''+c.id+'\')">Conferir</button> ')+'<button class="btn sec sm" onclick="excluirCert(\''+c.id+'\')">✕</button>' : '')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum curso registrado. '+(staff() ? '' : 'Se você já fez formação ou atualização, informe aqui para receber o aviso de vencimento.')+'</p>';
   h += '</div>';
-  if(aulasAluno.length) h += '<div class="card"><h3>Cronograma da minha turma</h3><div class="tw"><table><tr><th>Data</th><th>Horário</th><th>Disciplina</th><th>Instrutor</th></tr>'+aulasAluno.map(a => '<tr'+(a.data < hojeISO() ? ' style="opacity:.55"' : '')+'><td>'+fmt(a.data)+'</td><td>'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '—')+'</td><td>'+esc(a.disciplinas ? a.disciplinas.nome : (a.conteudo || '—'))+'</td><td>'+esc(a.instrutor || '—')+'</td></tr>').join('')+'</table></div></div>';
   // documentos
   const emAnalise = docs.filter(d => d.status === 'enviado').length;
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span>'+(staff() && emAnalise ? '<button class="btn ok sm" onclick="aprovarTodos()">Aprovar todos em análise ('+emAnalise+')</button>' : '')+(staff() && docs.length ? '<button class="btn nv sm" onclick="pdfsPessoa(this)">⬇ PDFs para o GESP</button>' : '')+'<button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
@@ -590,6 +597,55 @@ async function vPessoa(id){
     (staff() ? '<label class="f w"><span>Observações internas</span><textarea id="pObs" rows="2">'+esc(p.obs)+'</textarea></label>' : '')+
     '</div><button class="btn" onclick="salvarPessoa(this)">Salvar dados</button></div>';
   return h;
+}
+
+/* ---------- MEUS CURSOS (portal do aluno) ---------- */
+function cardMeusCursos(sols, certs){
+  const hoje = hojeISO(), pre = sols.filter(s => ['rascunho','enviada','pendente','aprovada'].includes(s.status)), and = sols.filter(s => s.status === 'matriculada');
+  const venceDe = c => { const vm = c.cursos ? c.cursos.validade_meses : 0; return vm > 0 ? addMeses(c.data_conclusao, vm) : null; };
+  const ultimo = {}; certs.forEach(c => { const k = (c.cursos && c.cursos.grupo_validade) || c.curso_id; if(!ultimo[k] || c.data_conclusao > ultimo[k].data_conclusao) ultimo[k] = c; });
+  const venc = Object.values(ultimo).filter(c => venceDe(c) && venceDe(c) < hoje), conc = certs.filter(c => !venc.includes(c));
+  const ir = id => 'onclick="document.getElementById(\''+id+'\').scrollIntoView({behavior:\'smooth\'})"';
+  let h = '<div class="card"><h3>Meus cursos</h3><div class="kpis">'+
+    '<div class="kpi" '+ir('mcPre')+'><span>Em pré-matrícula</span><b style="color:var(--warn)">'+pre.length+'</b></div>'+
+    '<div class="kpi" '+ir('mcAnd')+'><span>Matriculado / em andamento</span><b style="color:var(--navy2)">'+and.length+'</b></div>'+
+    '<div class="kpi" '+ir('mcConc')+'><span>Concluídos</span><b style="color:var(--ok)">'+conc.length+'</b></div>'+
+    '<div class="kpi" '+ir('mcVenc')+'><span>Vencidos</span><b style="color:var(--bad)">'+venc.length+'</b></div></div>';
+  // em andamento
+  h += '<div class="secao" id="mcAnd">Em andamento</div>';
+  h += and.length ? and.map(s => blocoAndamento(s)).join('') : '<p class="muted small">Nenhum curso em andamento.</p>';
+  // pré-matrícula
+  h += '<div class="secao" id="mcPre">Em pré-matrícula</div>';
+  h += pre.length ? '<div class="tw"><table>'+pre.map(s => '<tr><td><b>'+esc(s.cursos ? s.cursos.sigla : '')+'</b> <span class="muted small">'+esc(s.cursos ? s.cursos.nome : '')+'</span></td><td>'+bdg(SOL[s.status])+'</td><td class="small">'+(s._fila ? s._fila+'º da fila para a próxima turma' : s.status === 'pendente' ? 'Corrija o que a escola pediu abaixo' : s.status === 'rascunho' ? 'Envie os documentos e mande para análise' : 'Aguardando a escola')+'</td></tr>').join('')+'</table></div>' : '<p class="muted small">Nenhuma pré-matrícula aberta.</p>';
+  // concluídos
+  h += '<div class="secao" id="mcConc">Concluídos</div>';
+  h += conc.length ? '<div class="tw"><table>'+conc.map(c => { const v = venceDe(c), k = (c.cursos && c.cursos.grupo_validade) || c.curso_id, renovado = ultimo[k] !== c;
+      return '<tr><td><b>'+esc(c.cursos ? c.cursos.sigla : '')+'</b> <span class="muted small">'+esc(c.cursos ? c.cursos.nome : '')+'</span></td><td class="small">Concluído em '+fmt(c.data_conclusao)+'</td><td>'+(renovado ? '<span class="bdg">Substituído por curso mais recente</span>' : v ? bdgValidade(v) : '<span class="bdg ok">Sem validade</span>')+'</td></tr>'; }).join('')+'</table></div>' : '<p class="muted small">Nenhum curso concluído registrado.</p>';
+  // vencidos
+  h += '<div class="secao" id="mcVenc">Vencidos</div>';
+  h += venc.length ? '<div class="tw"><table>'+venc.map(c => '<tr><td><b>'+esc(c.cursos ? c.cursos.sigla : '')+'</b> <span class="muted small">'+esc(c.cursos ? c.cursos.nome : '')+'</span></td><td><span class="bdg bad">Venceu em '+fmt(venceDe(c))+'</span></td><td><button class="btn sm" onclick="novaSolicitacao()">Fazer a atualização</button></td></tr>').join('')+'</table></div>' : '<p class="muted small">Nenhum curso vencido.</p>';
+  return h + '</div>';
+}
+function blocoAndamento(s){
+  const a = s._and, c = s.cursos || {};
+  if(!a) return '<div class="sol"><h4>'+esc(c.sigla || '')+' — '+esc(c.nome || '')+'</h4><p class="muted small">Andamento indisponível.</p></div>';
+  const ds = a.disciplinas || [], aulas = a.aulas || [], hoje = hojeISO();
+  const carga = ds.reduce((t, d) => t + Number(d.carga || 0), 0) || aulas.reduce((t, x) => t + Number(x.horas || 0), 0);
+  const dadas = ds.length ? ds.reduce((t, d) => t + Math.min(Number(d.dadas || 0), Number(d.carga || 0) || Infinity), 0) : aulas.filter(x => x.feita).reduce((t, x) => t + Number(x.horas_dadas ?? x.horas), 0);
+  const pc = carga ? Math.min(100, Math.round(dadas * 100 / carga)) : 0;
+  const feitas = aulas.filter(x => x.feita), hDadas = feitas.reduce((t, x) => t + Number(x.horas_dadas ?? x.horas), 0), hPres = feitas.filter(x => x.presente).reduce((t, x) => t + Number(x.horas_dadas ?? x.horas), 0);
+  const freq = hDadas ? Math.round(hPres * 1000 / hDadas) / 10 : null, faltas = feitas.filter(x => x.presente === false).length;
+  const prox = aulas.filter(x => x.data >= hoje && !x.feita).slice(0, 5);
+  let h = '<div class="sol"><h4>'+esc(c.sigla || '')+' — '+esc(c.nome || '')+' · Turma '+esc(a.turma.codigo)+'</h4>'+
+    '<div class="small muted">'+fmt(a.turma.inicio)+' a '+fmt(a.turma.fim)+(a.turma.turno ? ' · '+esc(a.turma.turno) : '')+(a.turma.local ? ' · '+esc(a.turma.local) : '')+'</div>'+
+    '<div style="margin-top:10px"><b>Andamento do curso: '+pc+'%</b> <span class="small muted">('+dadas+' de '+carga+' horas-aula)</span><div class="prog" style="height:14px"><i style="width:'+pc+'%"></i></div></div>'+
+    '<div class="small" style="margin:6px 0 10px">Minha frequência: <b>'+(freq !== null ? freq+'%' : '—')+'</b>'+(faltas ? ' · <span style="color:var(--bad)">'+faltas+' falta(s)</span>' : '')+'</div>';
+  if(ds.length) h += '<div class="tw"><table><tr><th>Disciplina</th><th>Instrutor</th><th style="min-width:130px">Andamento</th><th></th></tr>'+ds.map(d => { const p2 = Number(d.carga) ? Math.min(100, Math.round(Number(d.dadas) * 100 / Number(d.carga))) : 0;
+      return '<tr><td>'+esc(d.nome)+'</td><td class="small">'+esc(d.instrutor || '—')+'</td><td><span class="small">'+Number(d.dadas)+' / '+Number(d.carga)+' h</span><div class="prog"><i style="width:'+p2+'%"></i></div></td><td>'+(d.concluida ? '<span class="bdg ok">Concluída</span>' : Number(d.dadas) > 0 ? '<span class="bdg warn">Em andamento</span>' : '<span class="bdg">A iniciar</span>')+'</td></tr>'; }).join('')+'</table></div>';
+  if(prox.length) h += '<div class="small" style="margin-top:8px"><b>Próximas aulas:</b> '+prox.map(x => fmt(x.data)+(x.inicio ? ' '+x.inicio.slice(0, 5) : '')+(x.disciplina ? ' — '+esc(x.disciplina) : '')).join(' · ')+'</div>';
+  if(aulas.length) h += '<details style="margin-top:8px"><summary class="small" style="cursor:pointer">Ver cronograma completo ('+aulas.length+' aulas)</summary><div class="tw"><table><tr><th>Data</th><th>Horário</th><th>Disciplina</th><th>Instrutor</th><th>Situação</th></tr>'+aulas.map(x =>
+      '<tr><td>'+fmt(x.data)+'</td><td>'+(x.inicio ? x.inicio.slice(0, 5) + (x.fim ? '–' + x.fim.slice(0, 5) : '') : '—')+'</td><td>'+esc(x.disciplina || '—')+'</td><td class="small">'+esc(x.instrutor || '—')+'</td><td>'+(x.feita ? (x.presente === false ? '<span class="bdg bad">Falta</span>' : x.presente ? '<span class="bdg ok">Presente</span>' : '<span class="bdg ok">Dada</span>') : x.data < hoje ? '<span class="bdg">Aguardando registro</span>' : '<span class="bdg">Programada</span>')+'</td></tr>').join('')+'</table></div></details>';
+  return h + '</div>';
 }
 
 function cardSolicitacao(s){
@@ -983,7 +1039,7 @@ async function vCursos(){
   const ds = await q(sb.from('disciplinas').select('curso_id').eq('escola_id', S.perfil.escola_id)); S.nDisc = {}; ds.forEach(d => S.nDisc[d.curso_id] = (S.nDisc[d.curso_id] || 0) + 1);
   return '<div class="bar"><h2 style="margin:0">Cursos</h2><span class="sp"></span><button class="btn" onclick="editarCurso(\'\')">+ Novo curso</button></div>'+
     '<div class="card"><p class="small muted" style="margin-top:0">Revise nomes, validade e documentos exigidos conforme as normas vigentes da PF. Cursos com o mesmo <b>grupo de validade</b> renovam a mesma validade (ex.: CFV e CAV no grupo VIGILANTE).</p><div class="tw"><table><tr><th>Sigla</th><th>Nome</th><th>Grupo</th><th>Validade</th><th>Documentos</th><th>Disciplinas</th><th>Ativo</th></tr>'+
-    S.cursos.map(c => '<tr class="click" onclick="editarCurso(\''+c.id+'\')"><td><b>'+esc(c.sigla)+'</b></td><td>'+esc(c.nome)+'</td><td>'+esc(c.grupo_validade || '—')+'</td><td>'+(c.validade_meses ? c.validade_meses+' meses' : 'Sem validade')+'</td><td>'+(c.docs_exigidos || []).length+'</td><td><button class="btn sec sm" onclick="event.stopPropagation();modalDisciplinas(\''+c.id+'\')">Grade'+(S.nDisc && S.nDisc[c.id] ? ' ('+S.nDisc[c.id]+')' : '')+'</button></td><td>'+(c.ativo ? '<span class="bdg ok">Sim</span>' : '<span class="bdg">Não</span>')+'</td></tr>').join('')+'</table></div></div>';
+    S.cursos.map(c => '<tr class="click" onclick="editarCurso(\''+c.id+'\')"><td><b>'+esc(c.sigla)+'</b></td><td>'+esc(c.nome)+'</td><td>'+esc(c.grupo_validade || '—')+'</td><td>'+(c.validade_meses ? c.validade_meses+' meses' : 'Sem validade')+'</td><td>'+(c.docs_exigidos || []).length+'</td><td><button class="btn sec sm" onclick="event.stopPropagation();modalDisciplinas(\''+c.id+'\')">Disciplinas'+(S.nDisc && S.nDisc[c.id] ? ' ('+S.nDisc[c.id]+')' : '')+'</button></td><td>'+(c.ativo ? '<span class="bdg ok">Sim</span>' : '<span class="bdg">Não</span>')+'</td></tr>').join('')+'</table></div></div>';
 }
 function editarCurso(id){
   const c = id ? curso(id) : { sigla:'', nome:'', grupo_validade:'', validade_meses:0, docs_exigidos:[], ativo:true };
@@ -998,20 +1054,27 @@ function editarCurso(id){
 }
 async function modalDisciplinas(cursoId){
   const c = curso(cursoId), l = await q(sb.from('disciplinas').select('*').eq('curso_id', cursoId).order('ordem'));
-  abrirModal('Grade curricular — ' + c.sigla, '<p class="small muted" style="margin-top:0">Uma disciplina por linha, no formato <b>Nome ; horas</b>. Confira a grade e a carga horária na portaria vigente da PF.</p>'+
-    '<textarea id="dsLista" rows="14" style="width:100%" placeholder="Noções de Segurança Privada ; 10&#10;Armamento e Tiro ; 30">'+esc(l.map(d => d.nome + ' ; ' + Number(d.carga_horas)).join('\n'))+'</textarea><div id="dsTot" class="small muted"></div>',
-    '<button class="btn" onclick="salvarDisciplinas(\''+cursoId+'\',this)">Salvar grade</button>');
-  const tot = () => { const n = $('#dsLista').value.split('\n').map(x => Number((x.split(';')[1] || '').replace(',', '.')) || 0).reduce((a, b) => a + b, 0); $('#dsTot').textContent = 'Total: ' + n + ' horas'; };
-  $('#dsLista').oninput = tot; tot(); S._disc = l;
+  S._disc = l;
+  abrirModal('Disciplinas — ' + c.sigla, '<p class="small muted" style="margin-top:0">Cadastre as disciplinas do curso, a carga em horas-aula e o instrutor responsável. Confira a grade e a carga horária na portaria vigente da PF. Para aparecer na lista, o instrutor precisa ter acesso de <b>Instrutor</b> (aba Equipe).</p>'+
+    '<div class="tw"><table id="dsTab"><tr><th>Disciplina</th><th style="width:90px">Horas-aula</th><th>Instrutor</th><th></th></tr>'+l.map(linhaDisc).join('')+'</table></div>'+
+    '<div class="bar" style="margin-top:8px"><button class="btn sec sm" onclick="$(\'#dsTab tbody\').insertAdjacentHTML(\'beforeend\', linhaDisc({}));totDisc()">+ Disciplina</button><span class="sp"></span><b id="dsTot" class="small"></b></div>',
+    '<button class="btn" onclick="salvarDisciplinas(\''+cursoId+'\',this)">Salvar</button>');
+  $('.mbox').classList.add('grande'); totDisc();
 }
+function linhaDisc(d){
+  return '<tr class="dsLin" data-id="'+esc(d.id || '')+'"><td><input class="dsNome" value="'+esc(d.nome || '')+'" placeholder="ex.: Armamento e Tiro"></td><td><input class="dsHoras" type="number" min="0" step="0.5" value="'+esc(d.carga_horas ?? '')+'" oninput="totDisc()" style="width:80px"></td>'+
+    '<td><select class="dsInst"><option value="">—</option>'+(S.instrutores || []).map(i => '<option value="'+i.id+'"'+(i.id === d.instrutor_id ? ' selected' : '')+'>'+esc(i.nome || i.email)+'</option>').join('')+'</select></td>'+
+    '<td><button class="btn sec sm" title="Remover" onclick="this.closest(\'tr\').remove();totDisc()">✕</button></td></tr>';
+}
+function totDisc(){ const n = [...document.querySelectorAll('.dsHoras')].reduce((a, x) => a + (Number(x.value) || 0), 0); const t = $('#dsTot'); if(t) t.textContent = 'Total: ' + n + ' horas-aula'; }
 async function salvarDisciplinas(cursoId, btn){
-  const linhas = $('#dsLista').value.split('\n').map(x => x.trim()).filter(Boolean).map((x, i) => { const [n, h] = x.split(';'); return { nome: (n || '').trim(), carga_horas: Number(String(h || '0').replace(',', '.')) || 0, ordem: i }; }).filter(x => x.nome);
-  const antigas = S._disc || [], solta = travar(btn);
+  const linhas = [...document.querySelectorAll('.dsLin')].map((tr, i) => ({ id: tr.dataset.id || null, nome: tr.querySelector('.dsNome').value.trim(), carga_horas: Number(tr.querySelector('.dsHoras').value || 0), instrutor_id: tr.querySelector('.dsInst').value || null, ordem: i })).filter(x => x.nome);
+  const solta = travar(btn);
   try {
-    for(const d of linhas){ const ex = antigas.find(a => a.nome.toLowerCase() === d.nome.toLowerCase()); if(ex){ ex._ok = true; await q(sb.from('disciplinas').update(d).eq('id', ex.id)); } else await q(sb.from('disciplinas').insert(Object.assign({ curso_id: cursoId, escola_id: S.perfil.escola_id }, d))); }
-    const sobras = antigas.filter(a => !a._ok).map(a => a.id);
+    for(const d of linhas){ const { id, ...dados } = d; if(id) await q(sb.from('disciplinas').update(dados).eq('id', id)); else await q(sb.from('disciplinas').insert(Object.assign({ curso_id: cursoId, escola_id: S.perfil.escola_id }, dados))); }
+    const fica = new Set(linhas.map(d => d.id).filter(Boolean)), sobras = (S._disc || []).filter(a => !fica.has(a.id)).map(a => a.id);
     if(sobras.length) await q(sb.from('disciplinas').delete().in('id', sobras));
-    fecharModal(); toast('Grade salva: ' + linhas.length + ' disciplina(s).'); recarregar();
+    fecharModal(); toast('Disciplinas salvas: ' + linhas.length + '.'); recarregar();
   } finally { solta(); }
 }
 async function salvarCurso(id, btn){
@@ -1254,11 +1317,13 @@ async function vTurma(id){
   mats.sort((a, b) => (a.pessoas ? a.pessoas.nome : '').localeCompare(b.pessoas ? b.pessoas.nome : ''));
   disp.sort((a, b) => String(a.analisado_em || a.criado_em).localeCompare(String(b.analisado_em || b.criado_em)) || String(a.id).localeCompare(String(b.id)));
   const pids = mats.map(m => m.pessoa_id);
-  const [docsT, aulas, discs] = await Promise.all([
+  const [docsT, aulas, discs, tdConc] = await Promise.all([
     pids.length ? q(sb.from('documentos').select('pessoa_id,tipo,validade,status,enviado_em').in('pessoa_id', pids).order('enviado_em', { ascending: false })) : [],
     q(sb.from('aulas').select('*, disciplinas(nome)').eq('turma_id', id).order('data').order('inicio')),
-    q(sb.from('disciplinas').select('*').eq('curso_id', t.curso_id).order('ordem'))
+    q(sb.from('disciplinas').select('*').eq('curso_id', t.curso_id).order('ordem')),
+    q(sb.from('turma_disciplinas').select('disciplina_id,concluida_em').eq('turma_id', id))
   ]);
+  discs.forEach(d => d._concluida = tdConc.find(x => x.disciplina_id === d.id));
   const limiteDoc = t.inicio && t.inicio > hojeISO() ? t.inicio : hojeISO();
   const alertaDocs = pid => docsParaGesp(docsT.filter(d => d.pessoa_id === pid)).filter(d => d.validade && d.validade < limiteDoc).map(d => d.tipo + ' (' + fmt(d.validade) + ')');
   S.turma = { t, mats, aulas, discs };
@@ -1302,20 +1367,21 @@ async function vTurma(id){
 /* ---------- cronograma de aulas e chamada ---------- */
 function cardCronograma(t, mats, aulas, discs, fechada){
   const hProg = {}, hDada = {};
-  aulas.forEach(a => { const k = a.disciplina_id || '-'; hProg[k] = (hProg[k] || 0) + Number(a.horas || 0); if(a.chamada_feita) hDada[k] = (hDada[k] || 0) + Number(a.horas || 0); });
+  aulas.forEach(a => { const k = a.disciplina_id || '-'; hProg[k] = (hProg[k] || 0) + Number(a.horas || 0); if(a.chamada_feita) hDada[k] = (hDada[k] || 0) + Number(a.horas_dadas ?? a.horas ?? 0); });
   const totProg = aulas.reduce((s, a) => s + Number(a.horas || 0), 0), totCarga = discs.reduce((s, d) => s + Number(d.carga_horas || 0), 0), feitas = aulas.filter(a => a.chamada_feita).length;
   let h = '<div class="card"><div class="bar"><h3 style="margin:0">Cronograma de aulas ('+aulas.length+')</h3><span class="sp"></span>'+
     (aulas.length ? '<button class="btn sec sm" onclick="imprimirCronograma()">Imprimir cronograma</button>' : '')+
     (fechada ? '' : (feitas ? '<button class="btn nv sm" onclick="aplicarFrequencia(\''+t.id+'\',this)">Calcular frequência pela chamada</button>' : '')+'<button class="btn sm" onclick="modalAula(\'\')">+ Aula</button>')+'</div>';
-  if(discs.length) h += '<div class="tw"><table><tr><th>Disciplina</th><th>Carga exigida</th><th>Programado</th><th>Ministrado (chamada)</th></tr>'+discs.map(d => {
-      const pr = hProg[d.id] || 0, dd = hDada[d.id] || 0, falta = Number(d.carga_horas) - pr;
-      return '<tr><td>'+esc(d.nome)+'</td><td>'+Number(d.carga_horas)+' h</td><td>'+pr+' h '+(falta > 0 ? '<span class="bdg warn">faltam '+falta+' h</span>' : '<span class="bdg ok">ok</span>')+'</td><td>'+dd+' h</td></tr>';
-    }).join('')+'<tr><td><b>Total</b></td><td><b>'+totCarga+' h</b></td><td><b>'+totProg+' h</b></td><td><b>'+Object.values(hDada).reduce((a, b) => a + b, 0)+' h</b></td></tr></table></div>';
+  if(discs.length) h += '<div class="tw"><table><tr><th>Disciplina</th><th>Instrutor</th><th>Carga</th><th>Programado</th><th>Ministrado</th><th>Situação</th></tr>'+discs.map(d => {
+      const pr = hProg[d.id] || 0, dd = hDada[d.id] || 0, falta = Number(d.carga_horas) - pr, pc = Number(d.carga_horas) ? Math.min(100, Math.round(dd * 100 / Number(d.carga_horas))) : 0;
+      return '<tr><td>'+esc(d.nome)+'</td><td class="small">'+esc(nomeInstrutor(d.instrutor_id) || '—')+'</td><td>'+Number(d.carga_horas)+' h</td><td>'+pr+' h '+(falta > 0 ? '<span class="bdg warn">faltam '+falta+' h</span>' : '')+'</td><td style="min-width:110px">'+dd+' h<div class="prog"><i style="width:'+pc+'%"></i></div></td>'+
+        '<td>'+(d._concluida ? '<span class="bdg ok">Concluída</span>'+(fechada ? '' : ' <a href="#" class="small" onclick="reabrirDisc(\''+t.id+'\',\''+d.id+'\');return false">reabrir</a>') : dd > 0 ? '<span class="bdg warn">Em andamento</span>' : '<span class="bdg">Não iniciada</span>')+'</td></tr>';
+    }).join('')+'<tr><td colspan="2"><b>Total</b></td><td><b>'+totCarga+' h</b></td><td><b>'+totProg+' h</b></td><td><b>'+Object.values(hDada).reduce((a, b) => a + b, 0)+' h</b></td><td></td></tr></table></div>';
   else h += '<p class="small muted">Cadastre as disciplinas e a carga horária do curso em <a href="#" onclick="go(\'cursos\');return false">Cursos</a> para acompanhar se a turma cumpre a carga exigida.</p>';
   h += aulas.length ? '<div class="tw" style="margin-top:10px"><table><tr><th>Data</th><th>Horário</th><th>Disciplina</th><th>Instrutor</th><th>Horas</th><th>Chamada</th><th></th></tr>'+aulas.map(a =>
       '<tr><td>'+fmt(a.data)+' <span class="muted small">'+['dom','seg','ter','qua','qui','sex','sáb'][new Date(a.data + 'T12:00').getDay()]+'</span></td><td>'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '—')+'</td><td>'+esc(a.disciplinas ? a.disciplinas.nome : (a.conteudo || '—'))+'</td><td>'+esc(a.instrutor || '—')+'</td><td>'+Number(a.horas)+'</td>'+
-      '<td>'+(a.chamada_feita ? '<span class="bdg ok">Feita</span>' : '<span class="bdg">Pendente</span>')+'</td><td class="acoes">'+
-      (mats.length && !fechada ? '<button class="btn '+(a.chamada_feita ? 'sec' : 'ok')+' sm" onclick="modalChamada(\''+a.id+'\')">Chamada</button> ' : '')+
+      '<td>'+(a.chamada_feita ? '<span class="bdg ok">Dada'+(a.horas_dadas != null && Number(a.horas_dadas) < Number(a.horas) ? ' '+Number(a.horas_dadas)+'/'+Number(a.horas)+' h' : '')+'</span>' : '<span class="bdg">Pendente</span>')+'</td><td class="acoes">'+
+      (mats.length && !fechada ? '<button class="btn '+(a.chamada_feita ? 'sec' : 'ok')+' sm" onclick="go(\'chamada\',\''+a.id+'\')">Chamada</button> ' : '')+
       '<button class="btn sec sm" onclick="listaPresenca(\''+a.id+'\')" title="Imprimir lista de presença desta aula">🖨</button>'+
       (fechada ? '' : ' <button class="btn sec sm" onclick="modalAula(\''+a.id+'\')">Editar</button>')+'</td></tr>').join('')+'</table></div>'
     : '<p class="muted">Nenhuma aula lançada. Use "+ Aula" para montar o cronograma.</p>';
@@ -1324,14 +1390,15 @@ function cardCronograma(t, mats, aulas, discs, fechada){
 function modalAula(id){
   const { t, aulas, discs } = S.turma;
   const ult = aulas[aulas.length - 1];
-  const a = id ? aulas.find(x => x.id === id) : { data: ult ? addDias(ult.data, 1) : (t.inicio || hojeISO()), inicio: ult ? ult.inicio : '', fim: ult ? ult.fim : '', horas: ult ? ult.horas : 4, disciplina_id: '', instrutor: ult ? ult.instrutor : (t.instrutores || ''), conteudo: '' };
+  const a = id ? aulas.find(x => x.id === id) : { data: ult ? addDias(ult.data, 1) : (t.inicio || hojeISO()), inicio: ult ? ult.inicio : '', fim: ult ? ult.fim : '', horas: ult ? ult.horas : 4, disciplina_id: '', instrutor_id: ult ? ult.instrutor_id : null, instrutor: ult ? ult.instrutor : (t.instrutores || ''), conteudo: '' };
   abrirModal(id ? 'Editar aula' : 'Nova aula', '<div class="fgrid">'+
     '<label class="f"><span>Data</span><input id="auData" type="date" value="'+esc(a.data)+'"></label>'+
     '<label class="f"><span>Horas-aula</span><input id="auHoras" type="number" min="0.5" step="0.5" value="'+esc(a.horas)+'"></label>'+
     '<label class="f"><span>Início</span><input id="auIni" type="time" value="'+esc((a.inicio || '').slice(0, 5))+'"></label>'+
     '<label class="f"><span>Fim</span><input id="auFim" type="time" value="'+esc((a.fim || '').slice(0, 5))+'"></label>'+
-    '<label class="f w"><span>Disciplina</span><select id="auDisc"><option value="">—</option>'+discs.map(d => '<option value="'+d.id+'"'+(d.id === a.disciplina_id ? ' selected' : '')+'>'+esc(d.nome)+'</option>').join('')+'</select></label>'+
-    '<label class="f w"><span>Instrutor</span><input id="auInst" value="'+esc(a.instrutor)+'"></label>'+
+    '<label class="f w"><span>Disciplina</span><select id="auDisc" onchange="const d=S.turma.discs.find(x=>x.id===this.value);if(d&&d.instrutor_id)$(\'#auInstId\').value=d.instrutor_id"><option value="">—</option>'+discs.map(d => '<option value="'+d.id+'"'+(d.id === a.disciplina_id ? ' selected' : '')+'>'+esc(d.nome)+'</option>').join('')+'</select></label>'+
+    '<label class="f w"><span>Instrutor</span><select id="auInstId"><option value="">— (digite abaixo)</option>'+(S.instrutores || []).map(i => '<option value="'+i.id+'"'+(i.id === a.instrutor_id ? ' selected' : '')+'>'+esc(i.nome || i.email)+'</option>').join('')+'</select></label>'+
+    '<label class="f w"><span>Instrutor sem acesso ao sistema (opcional)</span><input id="auInst" value="'+esc(a.instrutor_id ? '' : a.instrutor)+'"></label>'+
     '<label class="f w"><span>Conteúdo / observação</span><input id="auCont" value="'+esc(a.conteudo)+'"></label>'+
     (id ? '' : '<label class="f w"><span>Repetir nos próximos dias (mesmo horário)</span><select id="auRep"><option value="0">Não repetir</option><option value="seg-sex">Até o fim da turma, de segunda a sexta</option><option value="seg-sab">Até o fim da turma, de segunda a sábado</option><option value="todos">Até o fim da turma, todos os dias</option></select></label>')+
     '</div>',
@@ -1339,7 +1406,7 @@ function modalAula(id){
 }
 async function salvarAula(id, btn){
   const { t } = S.turma;
-  const dados = { data: $('#auData').value, horas: Number($('#auHoras').value || 0), inicio: $('#auIni').value || null, fim: $('#auFim').value || null, disciplina_id: $('#auDisc').value || null, instrutor: $('#auInst').value.trim() || null, conteudo: $('#auCont').value.trim() || null };
+  const dados = { data: $('#auData').value, horas: Number($('#auHoras').value || 0), inicio: $('#auIni').value || null, fim: $('#auFim').value || null, disciplina_id: $('#auDisc').value || null, instrutor_id: $('#auInstId').value || null, instrutor: nomeInstrutor($('#auInstId').value) || $('#auInst').value.trim() || null, conteudo: $('#auCont').value.trim() || null };
   if(!dados.data || !(dados.horas > 0)) return toast('Informe a data e as horas-aula.', 'erro');
   const solta = travar(btn);
   try {
@@ -1395,6 +1462,76 @@ function imprimirCronograma(){
     '<table><tr><th>Data</th><th>Horário</th><th>Disciplina</th><th>Conteúdo</th><th>Instrutor</th><th>h/a</th></tr>'+aulas.map(a => '<tr><td>'+fmt(a.data)+'</td><td>'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '')+'</td><td>'+esc(a.disciplinas ? a.disciplinas.nome : '')+'</td><td>'+esc(a.conteudo || '')+'</td><td>'+esc(a.instrutor || '')+'</td><td>'+Number(a.horas)+'</td></tr>').join('')+
     '<tr><td colspan="5"><b>Total</b></td><td><b>'+aulas.reduce((s, a) => s + Number(a.horas || 0), 0)+'</b></td></tr></table>'+
     (discs.length ? '<p style="margin-top:12px"><b>Carga horária por disciplina:</b> '+discs.map(d => esc(d.nome)+' '+Number(d.carga_horas)+' h').join(' · ')+'</p>' : '')+'</body></html>');
+}
+
+async function reabrirDisc(turmaId, discId){ if(!confirm('Marcar esta disciplina como NÃO concluída?')) return; await q(sb.rpc('reabrir_disciplina', { p_turma: turmaId, p_disciplina: discId })); recarregar(); }
+
+/* ---------- AULAS (instrutor e escola) ---------- */
+async function vAulas(){
+  const ehInst = S.perfil.tipo === 'instrutor', todas = !ehInst || S.aulasTodas, hoje = hojeISO();
+  const lista = await q(sb.from('aulas').select('*, turmas(codigo,status,cursos(sigla)), disciplinas(nome,instrutor_id)').gte('data', addDias(hoje, -60)).lte('data', addDias(hoje, 45)).order('data').order('inicio').limit(800));
+  const minhas = lista.filter(a => a.turmas && a.turmas.status !== 'cancelada' && (todas || a.instrutor_id === S.perfil.id || (!a.instrutor_id && a.disciplinas && a.disciplinas.instrutor_id === S.perfil.id)));
+  const deHoje = minhas.filter(a => a.data === hoje), pend = minhas.filter(a => a.data < hoje && !a.chamada_feita),
+        prox = minhas.filter(a => a.data > hoje).slice(0, 20), feitas = minhas.filter(a => a.data < hoje && a.chamada_feita).reverse().slice(0, 20);
+  const linha = a => '<tr><td>'+fmt(a.data)+' <span class="muted small">'+['dom','seg','ter','qua','qui','sex','sáb'][new Date(a.data + 'T12:00').getDay()]+'</span></td><td>'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '—')+'</td><td><b>'+esc(a.turmas.codigo)+'</b> <span class="muted small">'+esc(a.turmas.cursos ? a.turmas.cursos.sigla : '')+'</span></td><td>'+esc(a.disciplinas ? a.disciplinas.nome : (a.conteudo || '—'))+'</td>'+(todas ? '<td class="small">'+esc(a.instrutor || '—')+'</td>' : '')+'<td>'+Number(a.horas)+' h</td>'+
+    '<td>'+(a.chamada_feita ? '<span class="bdg ok">Dada'+(a.horas_dadas != null && Number(a.horas_dadas) < Number(a.horas) ? ' '+Number(a.horas_dadas)+'/'+Number(a.horas)+' h' : '')+'</span>' : '<span class="bdg">Pendente</span>')+'</td>'+
+    '<td><button class="btn '+(a.chamada_feita ? 'sec' : 'ok')+' sm" onclick="go(\'chamada\',\''+a.id+'\')">'+(a.chamada_feita ? 'Ver / corrigir' : 'Fazer chamada')+'</button></td></tr>';
+  const tab = (titulo, l, vazio) => '<div class="card"><h3>'+titulo+' ('+l.length+')</h3>'+(l.length ? '<div class="tw"><table><tr><th>Data</th><th>Horário</th><th>Turma</th><th>Disciplina</th>'+(todas ? '<th>Instrutor</th>' : '')+'<th>Horas</th><th>Situação</th><th></th></tr>'+l.map(linha).join('')+'</table></div>' : '<p class="muted">'+vazio+'</p>')+'</div>';
+  let h = '<div class="bar"><h2 style="margin:0">'+(ehInst ? 'Minhas aulas' : 'Aulas')+'</h2><span class="sp"></span>'+
+    (ehInst ? '<label class="chk" style="margin:0"><input type="checkbox"'+(S.aulasTodas ? ' checked' : '')+' onchange="S.aulasTodas=this.checked;recarregar()"> <span>Ver aulas de todos os instrutores</span></label>' : '')+'</div>';
+  if(ehInst && !minhas.length && !S.aulasTodas) h += '<div class="aviso">Nenhuma aula atribuída a você. A escola define o instrutor em Cursos → Disciplinas ou em cada aula do cronograma da turma.</div>';
+  h += tab('Hoje', deHoje, 'Nenhuma aula hoje.');
+  if(pend.length) h += tab('Chamadas pendentes', pend, '');
+  h += tab('Próximas aulas', prox, 'Nenhuma aula programada.') + tab('Já registradas', feitas, 'Nenhuma ainda.');
+  return h;
+}
+async function vChamada(aulaId){
+  const a = await q(sb.from('aulas').select('*, turmas(id,codigo,curso_id,cursos(sigla,nome)), disciplinas(id,nome,carga_horas)').eq('id', aulaId).single());
+  const [alunos, outras, conc] = await Promise.all([
+    q(sb.rpc('chamada_alunos', { p_aula: aulaId })),
+    a.disciplina_id ? q(sb.from('aulas').select('id,horas,horas_dadas,chamada_feita').eq('turma_id', a.turma_id).eq('disciplina_id', a.disciplina_id)) : [],
+    a.disciplina_id ? q(sb.from('turma_disciplinas').select('disciplina_id').eq('turma_id', a.turma_id).eq('disciplina_id', a.disciplina_id)) : []
+  ]);
+  const jaDadas = outras.filter(x => x.chamada_feita && x.id !== a.id).reduce((s, x) => s + Number(x.horas_dadas ?? x.horas), 0), carga = a.disciplinas ? Number(a.disciplinas.carga_horas) : 0;
+  S.chamada = { a, alunos: alunos.map(x => Object.assign(x, { presente: x.presente !== false })), jaDadas, carga, concluida: conc.length > 0 };
+  const hd = a.horas_dadas != null ? Number(a.horas_dadas) : Number(a.horas);
+  let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">Chamada — '+fmt(a.data)+'</h2><span class="sp"></span>'+(a.chamada_feita ? '<span class="bdg ok">Já registrada — você pode corrigir</span>' : '')+'</div>';
+  h += '<div class="card"><div class="kpis" style="margin:0">'+
+    '<div class="kpi" style="cursor:default"><span>Turma</span><b style="font-size:18px">'+esc(a.turmas.codigo)+'</b><span>'+esc(a.turmas.cursos ? a.turmas.cursos.sigla : '')+'</span></div>'+
+    '<div class="kpi" style="cursor:default"><span>Disciplina</span><b style="font-size:18px">'+esc(a.disciplinas ? a.disciplinas.nome : (a.conteudo || '—'))+'</b><span>'+(carga ? 'Carga: '+carga+' h · já dadas: '+jaDadas+' h' : '')+'</span></div>'+
+    '<div class="kpi" style="cursor:default"><span>Horário · Instrutor</span><b style="font-size:18px">'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '—')+'</b><span>'+esc(a.instrutor || '—')+'</span></div>'+
+    '<div class="kpi" style="cursor:default"><span>Presentes</span><b id="chCont">—</b></div></div></div>';
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Alunos ('+alunos.length+')</h3><span class="sp"></span><span class="small muted">Toque no nome para marcar falta</span><button class="btn sec sm" onclick="chamadaTodos(true)">Todos presentes</button></div>'+
+    (alunos.length ? S.chamada.alunos.map((x, i) => '<div class="cham" id="ch'+i+'" onclick="alternarPresenca('+i+')"><span>'+(i + 1)+'. '+esc(x.nome)+'</span><span class="st"></span></div>').join('') : '<p class="muted">Nenhum aluno matriculado nesta turma.</p>')+'</div>';
+  h += '<div class="card"><h3>Conclusão da aula</h3><div class="fgrid">'+
+    '<label class="f"><span>Horas-aula dadas hoje (previstas: '+Number(a.horas)+')</span><input id="chHoras" type="number" min="0" max="'+Number(a.horas)+'" step="0.5" value="'+hd+'" oninput="atualizarCham()"></label>'+
+    '<div class="f"><span>&nbsp;</span><div class="bar" style="margin:0"><button class="btn sec sm" onclick="$(\'#chHoras\').value='+Number(a.horas)+';atualizarCham()">Aula completa ('+Number(a.horas)+' h)</button></div></div>'+
+    '<label class="f w"><span>Conteúdo ministrado (opcional)</span><input id="chCont2" value="'+esc(a.conteudo)+'"></label>'+
+    (a.disciplina_id ? '<label class="chk w" style="font-size:15px"><input type="checkbox" id="chConc" onchange="this.dataset.mexeu=1"'+(S.chamada.concluida ? ' checked disabled' : '')+'> <span><b>Concluir a disciplina '+esc(a.disciplinas.nome)+' nesta turma</b>'+(S.chamada.concluida ? ' (já concluída)' : '')+' <span id="chProg" class="small muted"></span></span></label>' : '')+
+    '</div><button class="btn ok" style="font-size:16px;padding:12px 18px" onclick="salvarRegistroAula(this)">Salvar chamada e horas</button></div>';
+  setTimeout(atualizarCham, 0);
+  return h;
+}
+function alternarPresenca(i){ const x = S.chamada.alunos[i]; x.presente = !x.presente; atualizarCham(); }
+function chamadaTodos(v){ S.chamada.alunos.forEach(x => x.presente = v); atualizarCham(); }
+function atualizarCham(){
+  const c = S.chamada; if(!c) return;
+  c.alunos.forEach((x, i) => { const el = $('#ch' + i); if(!el) return; el.classList.toggle('falta', !x.presente); el.querySelector('.st').innerHTML = x.presente ? '<span style="color:var(--ok)">Presente</span>' : '<span style="color:var(--bad)">Falta</span>'; });
+  const p = c.alunos.filter(x => x.presente).length, el = $('#chCont'); if(el) el.textContent = p + ' / ' + c.alunos.length;
+  const hh = Number(($('#chHoras') || {}).value || 0), tot = c.jaDadas + hh, pr = $('#chProg');
+  if(pr && c.carga){ pr.textContent = '— com esta aula: ' + tot + ' de ' + c.carga + ' h' + (tot >= c.carga ? ' (carga completa)' : ''); const cb = $('#chConc'); if(cb && !cb.disabled && !cb.dataset.mexeu && tot >= c.carga) cb.checked = true; }
+}
+async function salvarRegistroAula(btn){
+  const c = S.chamada, horas = Number($('#chHoras').value);
+  if(isNaN(horas) || horas < 0 || horas > Number(c.a.horas)) return toast('Horas dadas devem ficar entre 0 e ' + Number(c.a.horas) + '.', 'erro');
+  const cb = $('#chConc'), concluir = !!(cb && cb.checked && !cb.disabled);
+  if(concluir && c.carga && c.jaDadas + horas < c.carga && !confirm('A carga desta disciplina ainda não foi completada (' + (c.jaDadas + horas) + ' de ' + c.carga + ' h). Concluir mesmo assim?')) return;
+  const solta = travar(btn, 'Salvando...');
+  try {
+    const r = await q(sb.rpc('registrar_aula', { p_aula: c.a.id, p_presencas: c.alunos.map(x => ({ solicitacao_id: x.solicitacao_id, presente: x.presente })), p_horas: horas, p_concluir_disciplina: concluir, p_conteudo: $('#chCont2').value }));
+    toast('Chamada salva: ' + r.presentes + ' presente(s), ' + r.faltas + ' falta(s), ' + horas + ' h dadas' + (concluir ? '. Disciplina concluída.' : '.'));
+    S.hist.length ? voltar() : go('aulas', null, false);
+  } finally { solta(); }
 }
 
 async function marcarGesp(id, campo, marcado){ await q(sb.from('turmas').update({ [campo]: marcado ? hojeISO() : null }).eq('id', id)); recarregar(); }
@@ -1453,14 +1590,14 @@ function listaPresenca(aulaId){
     '<table><tr><th style="width:30px">Nº</th><th>Nome</th><th style="width:120px">CPF</th><th style="width:240px">Assinatura</th></tr>'+mats.map((m, i) => '<tr><td>'+(i + 1)+'</td><td>'+esc(m.pessoas ? m.pessoas.nome : '')+'</td><td>'+fmtDoc(m.pessoas ? m.pessoas.cpf : '')+'</td><td></td></tr>').join('')+'</table></body></html>');
 }
 
-const FUNCAO = { admin: 'Administrador', staff: 'Equipe da escola', aluno: 'Aluno', empresa: 'Empresa' };
+const FUNCAO = { admin: 'Administrador', staff: 'Equipe da escola', instrutor: 'Instrutor', aluno: 'Aluno', empresa: 'Empresa' };
 async function vEquipe(){
   if(S.perfil.tipo !== 'admin') return '<div class="card">Somente o administrador acessa esta tela.</div>';
-  const lista = await q(sb.from('perfis').select('id,nome,email,tipo').eq('escola_id', S.perfil.escola_id).in('tipo', ['staff','admin']).order('nome'));
+  const lista = await q(sb.from('perfis').select('id,nome,email,tipo').eq('escola_id', S.perfil.escola_id).in('tipo', ['staff','admin','instrutor']).order('nome'));
   return '<h2>Equipe da escola</h2><div class="card"><div class="tw"><table><tr><th>Nome</th><th>E-mail</th><th>Função</th><th></th></tr>'+lista.map(u => '<tr><td><b>'+esc(u.nome || '—')+'</b>'+(u.id === S.perfil.id ? ' <span class="bdg nv">você</span>' : '')+'</td><td>'+esc(u.email)+'</td><td>'+esc(FUNCAO[u.tipo])+'</td><td class="acoes">'+(u.id === S.perfil.id ? '' :
-    (u.tipo === 'staff' ? '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\'admin\')">Tornar administrador</button> ' : '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\'staff\')">Tornar equipe</button> ')+
+    ['staff','admin','instrutor'].filter(t => t !== u.tipo).map(t => '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\''+t+'\')">Tornar '+FUNCAO[t].toLowerCase()+'</button> ').join('')+
     '<button class="btn dg sm" onclick="definirFuncao(\''+u.id+'\',\'aluno\')">Remover acesso</button>')+'</td></tr>').join('')+'</table></div>'+
-    '<p class="small muted"><b>Administrador</b> faz tudo, inclusive gerenciar a equipe. <b>Equipe da escola</b> analisa documentos, pré-matrículas, cursos e vencimentos.</p></div>'+
+    '<p class="small muted"><b>Administrador</b> faz tudo, inclusive gerenciar a equipe. <b>Equipe da escola</b> analisa documentos, pré-matrículas, cursos e vencimentos. <b>Instrutor</b> só vê as aulas: faz a chamada e marca as horas dadas e a conclusão da disciplina.</p></div>'+
     '<div class="card"><h3>Adicionar pessoa à equipe</h3><p class="small muted" style="margin-top:0">1. Peça para a pessoa criar uma conta pelo link do portal (Painel → Link do portal).<br>2. Busque pelo e-mail que ela usou e defina a função.</p>'+
     '<div class="bar"><input id="eqEmail" type="email" placeholder="e-mail da pessoa" style="flex:1" onkeydown="if(event.key===\'Enter\')buscarEquipe()"><button class="btn nv" onclick="buscarEquipe()">Buscar</button></div><div id="eqRes"></div></div>';
 }
@@ -1469,18 +1606,19 @@ async function buscarEquipe(){
   if(!e) return;
   const r = await q(sb.from('perfis').select('id,nome,email,tipo').eq('escola_id', S.perfil.escola_id).ilike('email', e).limit(5));
   $('#eqRes').innerHTML = r.length ? r.map(u => '<div class="aviso" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div style="flex:1"><b>'+esc(u.nome || '—')+'</b> · '+esc(u.email)+' · hoje: '+esc(FUNCAO[u.tipo])+'</div>'+(u.id === S.perfil.id ? '' :
-    (u.tipo !== 'staff' ? '<button class="btn sm" onclick="definirFuncao(\''+u.id+'\',\'staff\')">Tornar equipe</button>' : '')+(u.tipo !== 'admin' ? '<button class="btn nv sm" onclick="definirFuncao(\''+u.id+'\',\'admin\')">Tornar administrador</button>' : ''))+'</div>').join('')
+    (u.tipo !== 'instrutor' ? '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\'instrutor\')">Tornar instrutor</button>' : '')+(u.tipo !== 'staff' ? '<button class="btn sm" onclick="definirFuncao(\''+u.id+'\',\'staff\')">Tornar equipe</button>' : '')+(u.tipo !== 'admin' ? '<button class="btn nv sm" onclick="definirFuncao(\''+u.id+'\',\'admin\')">Tornar administrador</button>' : ''))+'</div>').join('')
     : '<div class="aviso bad">Nenhuma conta com esse e-mail nesta escola. Confira o e-mail ou peça para a pessoa criar a conta pelo link do portal.</div>';
 }
 async function definirFuncao(id, tipo){
   if(id === S.perfil.id) return toast('Você não pode alterar a sua própria função.', 'erro');
-  const msg = { admin: 'Dar acesso de ADMINISTRADOR a esta pessoa?', staff: 'Dar acesso de EQUIPE DA ESCOLA a esta pessoa?', aluno: 'Remover o acesso desta pessoa ao painel da escola? A conta continua existindo como aluno.' }[tipo];
+  const msg = { admin: 'Dar acesso de ADMINISTRADOR a esta pessoa?', staff: 'Dar acesso de EQUIPE DA ESCOLA a esta pessoa?', instrutor: 'Dar acesso de INSTRUTOR a esta pessoa? Ela verá as aulas e poderá fazer a chamada.', aluno: 'Remover o acesso desta pessoa ao painel da escola? A conta continua existindo como aluno.' }[tipo];
   if(!confirm(msg)) return;
   await q(sb.from('perfis').update({ tipo }).eq('id', id));
+  await carregarInstrutores();
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
