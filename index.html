@@ -41,6 +41,13 @@ th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--bd);vertical
 th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
 .acoes .btn{margin:2px 0}
 .mbox.grande{max-width:960px}
+.grafico{width:100%;height:auto;display:block}
+.grafico .barra{fill:#1f3260}.grafico .barra:hover{fill:#f28c28}
+.grafico text{font-family:'DM Sans',system-ui,sans-serif;fill:#6b7488;font-size:12px}
+.grafico .rot{fill:#1b2333;font-weight:700}
+.funil{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:8px 12px;align-items:center;font-size:14px}
+.funil .trilho{background:#eef1f6;border-radius:6px;height:18px}
+.funil .enc{background:#1f3260;height:100%;border-radius:6px;min-width:2px}
 .visor{background:#eef1f6;border-radius:8px;overflow:auto;max-height:70vh;text-align:center}
 .visor img{max-width:100%;height:auto;display:block;margin:0 auto}
 .visor iframe{width:100%;height:68vh;border:0;display:block}
@@ -88,7 +95,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.3.0';
+const VERSAO = '1.4.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -749,7 +756,46 @@ async function vPainel(){
     k('Turmas abertas', turmasAnd, 'turmas')+
     k('Cursos vencidos ou vencendo em 30 dias', venc30, 'vencimentos', 'var(--bad)')+
     k('Pessoas cadastradas', pessoas, 'pessoas')+
-    '</div><div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
+    '</div>'+await blocoIndicadores()+'<div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
+}
+const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+function graficoVencimentos(meses){
+  const estreito = window.innerWidth < 600, W = estreito ? 360 : 720, H = estreito ? 200 : 230, mL = 4, mR = 4, mT = 24, mB = 28, n = meses.length;
+  const max = Math.max(1, ...meses.map(m => m.n)), passo = (W - mL - mR) / n, larg = Math.min(40, passo - 6);
+  const esc_ = v => (H - mB - mT) * v / max;
+  let g = '<line x1="'+mL+'" x2="'+(W - mR)+'" y1="'+(H - mB)+'" y2="'+(H - mB)+'" stroke="#dfe3ec"/>';
+  const iMax = meses.findIndex(m => m.n === max && m.n > 0);
+  meses.forEach((m, i) => {
+    const x = mL + i * passo + (passo - larg) / 2, h = esc_(m.n), y = H - mB - h, [a, mm] = m.mes.split('-');
+    const rotulo = MESES[Number(mm) - 1] + (mm === '01' || i === 0 ? '/' + a.slice(2) : '');
+    if(m.n > 0) g += '<path class="barra" d="M'+x+','+(H - mB)+' V'+(y + 4)+' Q'+x+','+y+' '+(x + 4)+','+y+' H'+(x + larg - 4)+' Q'+(x + larg)+','+y+' '+(x + larg)+','+(y + 4)+' V'+(H - mB)+' Z"><title>'+rotulo+': '+m.n+' vencimento(s)</title></path>';
+    else g += '<rect x="'+x+'" y="'+(H - mB - 2)+'" width="'+larg+'" height="2" fill="#dfe3ec"><title>'+rotulo+': nenhum vencimento</title></rect>';
+    if(m.n > 0 && (i === iMax || !estreito)) g += '<text class="rot" x="'+(x + larg / 2)+'" y="'+(y - 6)+'" text-anchor="middle">'+m.n+'</text>';
+    if(!estreito || i % 2 === 0) g += '<text x="'+(x + larg / 2)+'" y="'+(H - 10)+'" text-anchor="middle">'+rotulo+'</text>';
+  });
+  return '<svg class="grafico" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Vencimentos de curso por mês nos próximos 12 meses">'+g+'</svg>';
+}
+async function blocoIndicadores(){
+  const { data: d, error } = await sb.rpc('indicadores');
+  if(error || !d) return '';
+  const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '—';
+  const th = d.tempo_doc_h;
+  const tempo = th === null || th === undefined ? '—' : th < 48 ? String(th).replace('.', ',') + ' h' : (Math.round(th / 24 * 10) / 10).toString().replace('.', ',') + ' dias';
+  const f = d.funil, totTurma = d.aprovados_turma + d.reprovados_turma;
+  const k = (t, v, sub) => '<div class="kpi" style="cursor:default"><span>'+t+'</span><b>'+v+'</b><span class="small">'+sub+'</span></div>';
+  let h = '<h2 style="margin-top:22px">Indicadores</h2><div class="kpis">'+
+    k('Tempo médio de análise de documentos', tempo, d.docs_analisados+' documento(s) nos últimos 90 dias')+
+    k('Conversão em matrícula', pct(f.matriculadas, f.enviadas), f.matriculadas+' de '+f.enviadas+' pré-matrículas enviadas (12 meses)')+
+    k('Aprovação nas turmas', pct(d.aprovados_turma, totTurma), d.aprovados_turma+' aprovado(s), '+d.reprovados_turma+' reprovado(s) (12 meses)')+
+    k('Formados em 12 meses', f.concluidas, 'cursos concluídos com aprovação')+'</div>';
+  const totVenc = d.venc_mes.reduce((a, m) => a + m.n, 0);
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Vencimentos de curso nos próximos 12 meses</h3><span class="sp"></span><span class="small muted">'+totVenc+' no período'+(d.vencidos ? ' · <b style="color:var(--bad)">'+d.vencidos+' já vencido(s)</b>' : '')+'</span></div>'+
+    '<p class="small muted" style="margin-top:0">É a demanda de atualização que vem pela frente: use para planejar as próximas turmas de CAV.</p>'+graficoVencimentos(d.venc_mes)+'</div>';
+  const etapas = [['Cadastros', f.cadastros], ['Pré-matrículas enviadas', f.enviadas], ['Aprovadas', f.aprovadas], ['Matriculadas', f.matriculadas], ['Concluídas', f.concluidas]];
+  const base = Math.max(1, ...etapas.map(e => e[1]));
+  h += '<div class="card"><h3>Funil dos últimos 12 meses</h3><div class="funil">'+etapas.map(([nome, v], i) => '<div>'+nome+'<div class="small muted"><b style="color:var(--tx)">'+v+'</b>'+(i > 0 && etapas[i - 1][1] ? ' · '+pct(v, etapas[i - 1][1])+' da etapa anterior' : '')+'</div></div><div class="trilho"><div class="enc" style="width:'+Math.max(0.5, 100 * v / base)+'%"></div></div>').join('')+'</div></div>';
+  h += '<div class="card"><h3>Empresas clientes (top 10)</h3>'+(d.empresas.length ? '<div class="tw"><table><tr><th>Empresa</th><th>Vigilantes</th><th>Vencendo em 90 dias</th><th>Vencidos</th></tr>'+d.empresas.map(e => '<tr><td><b>'+esc(e.nome)+'</b></td><td>'+e.vigilantes+'</td><td>'+(e.vencendo ? '<span class="bdg warn">'+e.vencendo+'</span>' : '0')+'</td><td>'+(e.vencidos ? '<span class="bdg bad">'+e.vencidos+'</span>' : '0')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma empresa cadastrada ainda.</p>')+'</div>';
+  return h;
 }
 async function vAnalise(){
   const eid = S.perfil.escola_id;
