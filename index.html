@@ -16,6 +16,7 @@ header{background:var(--navy);color:#fff;padding:12px 16px;display:flex;align-it
 .brand{font-weight:700;font-size:18px}.brand b{color:var(--or)}
 header small{opacity:.75;font-size:12px;display:block}
 header .usr{text-align:right;font-size:13px}
+header a.hdr{display:inline-block;background:#1f9d55;color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;text-decoration:none;margin-top:4px}
 header button{background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer;margin-top:4px}
 nav{background:var(--navy2);display:flex;overflow-x:auto;gap:2px;padding:0 8px;position:sticky;top:0;z-index:5}
 nav button{background:none;border:0;color:#cfd6e6;padding:12px 14px;font:inherit;font-weight:500;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent}
@@ -87,7 +88,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.2.0';
+const VERSAO = '1.3.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -305,7 +306,7 @@ function menu(){
 }
 function moldura(){
   if($('#main')) return;
-  $('#app').innerHTML = '<header><div><div class="brand">FIEL <b>Segurança Privada</b></div><small>'+esc(S.escola ? S.escola.nome : '')+'</small></div><div class="usr">'+esc(S.perfil.nome || S.perfil.email)+'<br><button onclick="sair()">Sair</button></div></header><nav id="nav"></nav><main id="main"></main>';
+  $('#app').innerHTML = '<header><div><div class="brand">FIEL <b>Segurança Privada</b></div><small>'+esc(S.escola ? S.escola.nome : '')+'</small></div><div class="usr">'+esc(S.perfil.nome || S.perfil.email)+'<br>'+(!staff() && S.escola && linkWhats(S.escola.whatsapp, '') ? '<a class="hdr" href="'+esc(linkWhats(S.escola.whatsapp, 'Olá! Vim pelo portal FIEL Segurança Privada.'))+'" target="_blank" rel="noopener">💬 Falar com a escola</a> ' : '')+'<button onclick="sair()">Sair</button></div></header><nav id="nav"></nav><main id="main"></main>';
 }
 function desenharMenu(){
   const raiz = { pessoa:'pessoa', vigilantes:'vigilantes' };
@@ -623,14 +624,35 @@ async function vVigilantes(empresaId){
   }
   const nomeEmp = empresaId && S.empresas[empresaId] ? S.empresas[empresaId].nome : '';
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">Vigilantes'+(nomeEmp ? ' — '+esc(nomeEmp) : '')+' <span class="muted">('+lista.length+')</span></h2><span class="sp"></span>'+
-    '<button class="btn sec" onclick="modalImportar(\''+eid+'\')">Importar lista</button><button class="btn" onclick="modalNovaPessoa(\''+eid+'\')">+ Vigilante</button></div>';
+    '<button class="btn nv" onclick="modalLote()">Pré-matrícula em lote</button><button class="btn sec" onclick="modalImportar(\''+eid+'\')">Importar lista</button><button class="btn" onclick="modalNovaPessoa(\''+eid+'\')">+ Vigilante</button></div>';
   if(!lista.length) return h + '<div class="card"><p>Nenhum vigilante cadastrado.</p><p class="muted small">Cadastre um a um ou importe uma lista. Depois, abra cada vigilante para criar a pré-matrícula e enviar os documentos.</p></div>';
-  h += '<div class="card"><div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Última pré-matrícula</th><th>Próximo vencimento</th></tr>'+lista.map(p => {
+  h += '<div class="card"><p class="small muted" style="margin-top:0">Marque os vigilantes e use <b>Pré-matrícula em lote</b> para pedir o mesmo curso (ex.: atualização) para todos de uma vez.</p><div class="tw"><table><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.selVig\').forEach(c=>c.checked=this.checked)"></th><th>Nome</th><th>CPF</th><th>Última pré-matrícula</th><th>Próximo vencimento</th></tr>'+lista.map(p => {
     const s = sols.find(x => x.pessoa_id === p.id);
     const v = vals.filter(x => x.pessoa_id === p.id).sort((a, b) => a.vence_em.localeCompare(b.vence_em))[0];
-    return '<tr class="click" onclick="go(\'pessoa\',\''+p.id+'\')"><td><b>'+esc(p.nome)+'</b></td><td>'+fmtDoc(p.cpf)+'</td><td>'+(s ? esc(s.cursos ? s.cursos.sigla : '')+' '+bdg(SOL[s.status]) : '<span class="muted">—</span>')+'</td><td>'+(v ? esc(v.sigla)+' '+bdgValidade(v.vence_em) : '<span class="muted">—</span>')+'</td></tr>';
+    return '<tr class="click" onclick="go(\'pessoa\',\''+p.id+'\')"><td onclick="event.stopPropagation()"><input type="checkbox" class="selVig" value="'+p.id+'"></td><td><b>'+esc(p.nome)+'</b></td><td>'+fmtDoc(p.cpf)+'</td><td>'+(s ? esc(s.cursos ? s.cursos.sigla : '')+' '+bdg(SOL[s.status]) : '<span class="muted">—</span>')+'</td><td>'+(v ? esc(v.sigla)+' '+bdgValidade(v.vence_em) : '<span class="muted">—</span>')+'</td></tr>';
   }).join('')+'</table></div></div>';
   return h;
+}
+function modalLote(){
+  const ids = [...document.querySelectorAll('.selVig:checked')].map(c => c.value);
+  if(!ids.length) return toast('Marque pelo menos um vigilante na lista.', 'erro');
+  const ativos = S.cursos.filter(c => c.ativo);
+  abrirModal('Pré-matrícula em lote ('+ids.length+' vigilante(s))',
+    '<label class="f"><span>Curso</span><select id="loCurso">'+ativos.map(c => '<option value="'+c.id+'">'+esc(c.sigla+' — '+c.nome)+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Observação para a escola (turno, período desejado...)</span><textarea id="loObs" rows="2"></textarea></label>'+
+    '<p class="small muted">Será criada uma pré-matrícula para cada vigilante marcado. Depois, abra cada um, envie os documentos pedidos e clique em "Enviar para análise". Quem já tem pré-matrícula em andamento neste curso é ignorado.</p>',
+    '<button class="btn" onclick="criarLote(this)">Criar pré-matrículas</button>');
+  S.loteIds = ids;
+}
+async function criarLote(btn){
+  const curso_id = $('#loCurso').value, obs = $('#loObs').value.trim() || null, ids = S.loteIds || [];
+  const solta = travar(btn, 'Criando...');
+  try {
+    const exist = await q(sb.from('solicitacoes').select('pessoa_id').in('pessoa_id', ids).eq('curso_id', curso_id).in('status', ['rascunho','enviada','pendente','aprovada','matriculada']));
+    const ja = new Set(exist.map(x => x.pessoa_id)), novos = ids.filter(i => !ja.has(i));
+    if(novos.length) await q(sb.from('solicitacoes').insert(novos.map(pessoa_id => ({ pessoa_id, escola_id: S.perfil.escola_id, curso_id, obs, status: 'rascunho' }))));
+    fecharModal(); toast(novos.length+' pré-matrícula(s) criada(s).'+(ja.size ? ' '+ja.size+' já tinha(m) em andamento.' : '')); recarregar();
+  } finally { solta(); }
 }
 function modalNovaPessoa(empresaId){
   const escolhaEmp = staff() && !empresaId ? '<label class="f w"><span>Empresa (opcional)</span><select id="npEmp"><option value="">— Sem empresa (aluno particular) —</option>'+Object.values(S.empresas).map(e => '<option value="'+e.id+'">'+esc(e.nome)+'</option>').join('')+'</select></label>' : '';
@@ -792,18 +814,29 @@ async function salvarCurso(id, btn){
     fecharModal(); toast('Curso salvo.'); recarregar();
   } finally { solta(); }
 }
+const EMST = { pendente:['Na fila','warn'], enviado:['Enviado','ok'], erro:['Erro','bad'] };
 async function vEscola(){
   const e = S.escola;
+  const { data: ems } = await sb.from('emails').select('id,para,assunto,status,criado_em,enviado_em,erro').eq('escola_id', e.id).order('id', { ascending: false }).limit(40);
   return '<h2>Dados da escola</h2><div class="card"><div class="fgrid">'+
     '<label class="f w"><span>Nome</span><input id="esNome" value="'+esc(e.nome)+'"></label>'+
     '<label class="f"><span>CNPJ</span><input id="esCnpj" value="'+esc(e.cnpj)+'"></label>'+
     '<label class="f"><span>WhatsApp de atendimento</span><input id="esWa" value="'+esc(e.whatsapp)+'"></label>'+
     '<label class="f"><span>E-mail</span><input id="esEmail" value="'+esc(e.email)+'"></label>'+
-    '<label class="f w"><span>Endereço</span><input id="esEnd" value="'+esc(e.endereco)+'"></label></div>'+
-    '<button class="btn" onclick="salvarEscola(this)">Salvar</button></div><p class="small muted">FIEL Segurança Privada · versão '+VERSAO+'</p>';
+    '<label class="f w"><span>Endereço</span><input id="esEnd" value="'+esc(e.endereco)+'"></label>'+
+    '<label class="chk w" style="font-size:14px"><input type="checkbox" id="esAuto"'+(e.avisos_auto !== false ? ' checked' : '')+'> <span><b>Enviar e-mails automáticos</b> — avisos de documento recusado, mudança de situação, matrícula, conclusão, vencimento de curso (90, 60, 30, 7 dias e no dia), resumo diário para a escola (e-mail acima) e relatório mensal para as empresas.</span></label></div>'+
+    '<button class="btn" onclick="salvarEscola(this)">Salvar</button></div>'+
+    '<div class="card"><div class="bar"><h3 style="margin:0">E-mails automáticos</h3><span class="sp"></span><button class="btn nv sm" onclick="testeEmail(this)">Enviar e-mail de teste para mim</button><button class="btn sec sm" onclick="recarregar()">Atualizar</button></div>'+
+    '<p class="small muted" style="margin-top:0">Os e-mails saem pelo Brevo em até 1 minuto. Os avisos de vencimento e o resumo diário rodam todo dia às 8h; o relatório das empresas, no dia 1 de cada mês.</p>'+
+    ((ems || []).length ? '<div class="tw"><table><tr><th>Data</th><th>Para</th><th>Assunto</th><th>Situação</th></tr>'+ems.map(m => '<tr><td class="small">'+new Date(m.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })+'</td><td class="small">'+esc(m.para)+'</td><td>'+esc(m.assunto)+'</td><td>'+bdg(EMST[m.status] || [m.status,''])+(m.erro ? '<div class="small" style="color:var(--bad)">'+esc(m.erro.slice(0, 120))+'</div>' : '')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum e-mail enviado ainda.</p>')+
+    '</div><p class="small muted">FIEL Segurança Privada · versão '+VERSAO+'</p>';
+}
+async function testeEmail(btn){
+  const solta = travar(btn, 'Enviando...');
+  try { const para = await q(sb.rpc('email_teste')); toast('Teste enviado para '+para+'. Deve chegar em até 2 minutos.'); setTimeout(recarregar, 1500); } finally { solta(); }
 }
 async function salvarEscola(btn){
-  const dados = { nome: $('#esNome').value.trim(), cnpj: $('#esCnpj').value.trim(), whatsapp: $('#esWa').value.trim(), email: $('#esEmail').value.trim(), endereco: $('#esEnd').value.trim() };
+  const dados = { nome: $('#esNome').value.trim(), cnpj: $('#esCnpj').value.trim(), whatsapp: $('#esWa').value.trim(), email: $('#esEmail').value.trim(), endereco: $('#esEnd').value.trim(), avisos_auto: $('#esAuto').checked };
   const solta = travar(btn);
   try { S.escola = await q(sb.from('escolas').update(dados).eq('id', S.escola.id).select().single()); toast('Dados salvos.'); } finally { solta(); }
 }
