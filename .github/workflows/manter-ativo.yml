@@ -1,0 +1,17 @@
+# Mantém o projeto gratuito do Supabase ativo (ele pausa após 7 dias sem uso).
+# Roda todo dia às 7h de Cuiabá e faz uma consulta leve no banco.
+name: Manter Supabase ativo
+on:
+  schedule:
+    - cron: '7 11 * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consulta leve no Supabase
+        env:
+          URL: https://qffqahrsmgqgxuzgrdsh.supabase.co
+          KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0
+        run: |
+          curl -sS -f -X POST "$URL/rest/v1/rpc/ping" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}'
