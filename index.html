@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#14213d">
 <title>FIEL Segurança Privada</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <style>
@@ -31,6 +35,10 @@ h2{margin:4px 0 14px;font-size:20px}h3{margin:0 0 12px;font-size:16px}
 .btn{background:var(--or);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
 .btn.sec{background:#e8ebf2;color:var(--tx)}.btn.nv{background:var(--navy)}.btn.dg{background:var(--bad)}.btn.ok{background:var(--ok)}
 .btn.wa{background:#1f9d55}.btn.sm{padding:5px 10px;font-size:13px}
+.logo{max-height:40px;max-width:140px;object-fit:contain;display:block;margin-bottom:4px}.auth .logo{max-height:64px;max-width:200px;margin:0 auto 10px}
+header .logo{background:#fff;border-radius:6px;padding:2px 4px}
+.cores{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.cores input[type=color]{width:48px;height:36px;padding:2px;border:1px solid var(--bd);border-radius:6px}
+#btnInstalar{display:none}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 input,select,textarea{font:inherit;padding:9px 10px;border:1px solid var(--bd);border-radius:8px;width:100%;background:#fff;color:var(--tx)}
 label.f{display:block;margin-bottom:10px}label.f span{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
@@ -95,7 +103,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.4.0';
+const VERSAO = '1.5.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -162,6 +170,22 @@ function fecharModal(){ $('#modal').classList.remove('on'); $('#modal').innerHTM
 $('#modal').addEventListener('click', e => { if(e.target.id === 'modal') fecharModal(); });
 function travar(btn, txt){ if(!btn) return () => {}; const o = btn.textContent; btn.disabled = true; btn.textContent = txt || 'Aguarde...'; return () => { btn.disabled = false; btn.textContent = o; }; }
 
+/* ================= MARCA E APLICATIVO ================= */
+function corValida(c){ return /^#[0-9a-fA-F]{6}$/.test(c || '') ? c : null; }
+function aplicarMarca(){
+  const e = S.escola || {}, r = document.documentElement.style;
+  const p = corValida(e.cor_primaria), d = corValida(e.cor_destaque);
+  if(p){ r.setProperty('--navy', p); r.setProperty('--navy2', misturar(p, '#ffffff', .14)); } else { r.removeProperty('--navy'); r.removeProperty('--navy2'); }
+  if(d) r.setProperty('--or', d); else r.removeProperty('--or');
+  const m = document.querySelector('meta[name=theme-color]'); if(m) m.content = p || '#14213d';
+}
+function misturar(a, b, t){ const h = x => [1,3,5].map(i => parseInt(x.slice(i, i+2), 16)); const A = h(a), B = h(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); }
+const logoHtml = () => S.escola && S.escola.logo_url ? '<img class="logo" src="'+esc(S.escola.logo_url)+'" alt="'+esc(S.escola.nome)+'">' : '';
+let _instalar = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); _instalar = e; document.querySelectorAll('#btnInstalar').forEach(b => b.style.display = 'inline-block'); });
+async function instalarApp(){ if(!_instalar) return toast('Use o menu do navegador e escolha "Adicionar à tela inicial".'); _instalar.prompt(); await _instalar.userChoice; _instalar = null; document.querySelectorAll('#btnInstalar').forEach(b => b.style.display = 'none'); }
+if('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
 /* ================= INÍCIO ================= */
 async function iniciar(){
   if(!window.supabase || CONFIG.SUPABASE_URL.startsWith('COLE')){
@@ -171,6 +195,7 @@ async function iniciar(){
   sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
   const { data: escola } = await sb.from('escolas').select('*').eq('slug', SLUG).maybeSingle();
   S.escola = escola;
+  aplicarMarca();
   sb.auth.onAuthStateChange((ev, sessao) => {
     if(ev === 'PASSWORD_RECOVERY'){ S.recovery = true; telaAuth('nova'); return; }
     if(ev === 'TOKEN_REFRESHED' || ev === 'USER_UPDATED'){ S.sessao = sessao; return; }
@@ -188,6 +213,9 @@ async function entrar(sessao){
     if(!perfil){ $('#app').innerHTML = '<div class="auth"><div class="auth-box"><p>Seu cadastro não foi encontrado. Fale com a escola.</p><button class="btn" onclick="sair()">Sair</button></div></div>'; return; }
     S.perfil = perfil;
     if(!S.escola || S.escola.id !== perfil.escola_id) S.escola = await q(sb.from('escolas').select('*').eq('id', perfil.escola_id).single());
+    aplicarMarca();
+    const rd = await sb.rpc('sou_dono'); S.dono = !rd.error && rd.data === true;
+    if(S.escola && S.escola.ativa === false && !S.dono){ $('#app').innerHTML = '<div class="auth"><div class="auth-box">'+logoHtml()+'<div class="brand">FIEL <b>Segurança Privada</b></div><div class="aviso bad" style="margin-top:16px">O acesso ao portal de <b>'+esc(S.escola.nome)+'</b> está temporariamente suspenso. Fale diretamente com a escola.</div><button class="btn sec" onclick="sair()">Sair</button></div></div>'; return; }
     await carregarCursos();
     if(staff()) await carregarEmpresas();
     if(perfil.tipo === 'aluno'){ const p = await q(sb.from('pessoas').select('id').eq('usuario_id', perfil.id).limit(1)); S.minhaPessoa = p[0] ? p[0].id : null; }
@@ -232,7 +260,7 @@ function telaAuth(aba){
     '<label class="f"><span>Nova senha (mínimo 8 caracteres)</span><input id="nSenha" type="password" autocomplete="new-password"></label>'+
     '<label class="f"><span>Repita a nova senha</span><input id="nSenha2" type="password" autocomplete="new-password"></label>'+
     '<button class="btn" style="width:100%" onclick="salvarNovaSenha(this)">Salvar nova senha</button>';
-  $('#app').innerHTML = '<div class="auth"><div class="auth-box"><div class="brand">FIEL <b>Segurança Privada</b></div><div class="muted">'+esc(nomeEscola)+' · Portal do aluno e da empresa</div>'+abas+corpo+'</div></div>';
+  $('#app').innerHTML = '<div class="auth"><div class="auth-box">'+logoHtml()+'<div class="brand">FIEL <b>Segurança Privada</b></div><div class="muted">'+esc(nomeEscola)+' · Portal do aluno e da empresa</div>'+abas+corpo+'<p style="text-align:center;margin:12px 0 0"><button id="btnInstalar" class="btn sec sm" onclick="instalarApp()"'+(_instalar ? ' style="display:inline-block"' : '')+'>📲 Instalar aplicativo</button></p></div></div>';
   S.tipoCad = 'aluno';
 }
 function textoLgpd(tipo){
@@ -307,13 +335,15 @@ async function salvarNovaSenha(btn){
 
 /* ================= NAVEGAÇÃO ================= */
 function menu(){
-  if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : []);
+  const dono = S.dono ? [['fiel','FIEL']] : [];
+  if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : [], dono);
+  if(S.dono) return dono;
   if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
   return [['pessoa','Meu cadastro']];
 }
 function moldura(){
   if($('#main')) return;
-  $('#app').innerHTML = '<header><div><div class="brand">FIEL <b>Segurança Privada</b></div><small>'+esc(S.escola ? S.escola.nome : '')+'</small></div><div class="usr">'+esc(S.perfil.nome || S.perfil.email)+'<br>'+(!staff() && S.escola && linkWhats(S.escola.whatsapp, '') ? '<a class="hdr" href="'+esc(linkWhats(S.escola.whatsapp, 'Olá! Vim pelo portal FIEL Segurança Privada.'))+'" target="_blank" rel="noopener">💬 Falar com a escola</a> ' : '')+'<button onclick="sair()">Sair</button></div></header><nav id="nav"></nav><main id="main"></main>';
+  $('#app').innerHTML = '<header><div>'+logoHtml()+'<div class="brand">FIEL <b>Segurança Privada</b></div><small>'+esc(S.escola ? S.escola.nome : '')+'</small></div><div class="usr">'+esc(S.perfil.nome || S.perfil.email)+'<br>'+(!staff() && S.escola && linkWhats(S.escola.whatsapp, '') ? '<a class="hdr" href="'+esc(linkWhats(S.escola.whatsapp, 'Olá! Vim pelo portal FIEL Segurança Privada.'))+'" target="_blank" rel="noopener">💬 Falar com a escola</a> ' : '')+'<button id="btnInstalar" onclick="instalarApp()"'+(_instalar ? ' style="display:inline-block"' : '')+'>📲 Instalar</button> <button onclick="sair()">Sair</button></div></header><nav id="nav"></nav><main id="main"></main>';
 }
 function desenharMenu(){
   const raiz = { pessoa:'pessoa', vigilantes:'vigilantes' };
@@ -419,6 +449,7 @@ async function vPessoa(id){
   const ativas = sols.filter(s => !['cancelada','recusada','concluida','reprovado'].includes(s.status));
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? 'Meu cadastro' : p.nome)+'</h2><span class="sp"></span>';
   if(staff()) h += botoesContato(p, 'Escola — ' + p.nome, 'Olá, ' + p.nome.split(' ')[0] + '!' + assinatura()) + ' <button class="btn dg sm" onclick="excluirPessoa(\''+p.id+'\')">Excluir</button>';
+  else h += '<button class="btn sec sm" onclick="baixarMeusDados()" title="Cópia dos seus dados (LGPD)">⬇ Baixar meus dados</button>';
   h += '</div>';
   if(!staff() && !sols.length) h += '<div class="passos"><div><b>Passo 1</b>Confira e complete seus dados</div><div><b>Passo 2</b>Crie a pré-matrícula no curso desejado</div><div><b>Passo 3</b>Envie os documentos pedidos</div><div><b>Passo 4</b>Clique em "Enviar para análise"</div></div>';
   if(staff() && p.empresa_id && S.empresas[p.empresa_id]) h += '<div class="aviso">Cadastrado pela empresa <b>'+esc(S.empresas[p.empresa_id].nome)+'</b>.</div>';
@@ -872,11 +903,136 @@ async function vEscola(){
     '<label class="f w"><span>Endereço</span><input id="esEnd" value="'+esc(e.endereco)+'"></label>'+
     '<label class="chk w" style="font-size:14px"><input type="checkbox" id="esAuto"'+(e.avisos_auto !== false ? ' checked' : '')+'> <span><b>Enviar e-mails automáticos</b> — avisos de documento recusado, mudança de situação, matrícula, conclusão, vencimento de curso (90, 60, 30, 7 dias e no dia), resumo diário para a escola (e-mail acima) e relatório mensal para as empresas.</span></label></div>'+
     '<button class="btn" onclick="salvarEscola(this)">Salvar</button></div>'+
+    '<div class="card"><h3>Marca da escola</h3><p class="small muted" style="margin-top:0">O logo e as cores aparecem no login, no topo do sistema e no aplicativo instalado.</p>'+
+    '<div class="bar">'+(e.logo_url ? '<img class="logo" src="'+esc(e.logo_url)+'" alt="logo" style="background:#eef1f6;padding:4px;border-radius:6px">' : '<span class="muted small">Sem logo</span>')+'<label class="btn sec sm" style="margin:0">Enviar logo (PNG, JPG ou SVG, até 1 MB)<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="display:none" onchange="enviarLogo(this)"></label>'+(e.logo_url ? '<button class="btn dg sm" onclick="removerLogo(this)">Remover logo</button>' : '')+'</div>'+
+    '<div class="cores"><label class="small">Cor principal <input type="color" id="esCor1" value="'+esc(corValida(e.cor_primaria) || '#14213d')+'"></label><label class="small">Cor de destaque <input type="color" id="esCor2" value="'+esc(corValida(e.cor_destaque) || '#f28c28')+'"></label><button class="btn sm" onclick="salvarCores(this)">Aplicar cores</button><button class="btn sec sm" onclick="salvarCores(this,true)">Voltar às cores padrão</button></div></div>'+
+    (S.perfil.tipo === 'admin' ? '<div class="card"><h3>Backup e LGPD</h3>'+
+      '<div class="bar"><button class="btn nv" onclick="baixarBackup(this)">⬇ Baixar backup da escola (JSON)</button><span class="small muted">Cópia de todos os cadastros, pré-matrículas, turmas, cursos e certificados. Os arquivos dos documentos ficam no Storage.</span></div>'+
+      '<div class="bar"><label class="small">Guardar documentos de cadastros inativos por <input id="esRet" type="number" min="12" max="240" value="'+esc(e.retencao_meses || 60)+'" style="width:80px"> meses</label><button class="btn sec sm" onclick="salvarRetencao(this)">Salvar prazo</button><button class="btn sec sm" onclick="verLimpeza(this)">Ver documentos vencidos para descarte</button></div>'+
+      '<p class="small muted" style="margin:0">Confira com o contador/jurídico o prazo exigido para guardar documentos de alunos. Cadastros com pré-matrícula em andamento nunca entram na limpeza.</p></div>' : '')+
     '<div class="card"><div class="bar"><h3 style="margin:0">E-mails automáticos</h3><span class="sp"></span><button class="btn nv sm" onclick="testeEmail(this)">Enviar e-mail de teste para mim</button><button class="btn sec sm" onclick="recarregar()">Atualizar</button></div>'+
     '<p class="small muted" style="margin-top:0">Os e-mails saem pelo Brevo em até 1 minuto. Os avisos de vencimento e o resumo diário rodam todo dia às 8h; o relatório das empresas, no dia 1 de cada mês.</p>'+
     ((ems || []).length ? '<div class="tw"><table><tr><th>Data</th><th>Para</th><th>Assunto</th><th>Situação</th></tr>'+ems.map(m => '<tr><td class="small">'+new Date(m.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })+'</td><td class="small">'+esc(m.para)+'</td><td>'+esc(m.assunto)+'</td><td>'+bdg(EMST[m.status] || [m.status,''])+(m.erro ? '<div class="small" style="color:var(--bad)">'+esc(m.erro.slice(0, 120))+'</div>' : '')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum e-mail enviado ainda.</p>')+
     '</div><p class="small muted">FIEL Segurança Privada · versão '+VERSAO+'</p>';
 }
+async function enviarLogo(inp){
+  const f = inp.files && inp.files[0]; inp.value = ''; if(!f) return;
+  if(f.size > 1048576) return toast('O logo precisa ter até 1 MB.', 'erro');
+  const ext = (f.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z]/g, '') || 'png';
+  const path = S.escola.id + '/logo-' + Date.now() + '.' + ext;
+  await q(sb.storage.from('logos').upload(path, f, { contentType: f.type, upsert: false }));
+  const url = sb.storage.from('logos').getPublicUrl(path).data.publicUrl;
+  const antigo = S.escola.logo_url;
+  S.escola = await q(sb.from('escolas').update({ logo_url: url }).eq('id', S.escola.id).select().single());
+  apagarLogoAntigo(antigo);
+  toast('Logo atualizado.'); $('#app').innerHTML = ''; go('escola', null, false);
+}
+function apagarLogoAntigo(url){ const m = url && url.split('/object/public/logos/')[1]; if(m) sb.storage.from('logos').remove([decodeURIComponent(m)]); }
+async function removerLogo(btn){
+  if(!confirm('Remover o logo da escola?')) return;
+  const solta = travar(btn); const antigo = S.escola.logo_url;
+  try { S.escola = await q(sb.from('escolas').update({ logo_url: null }).eq('id', S.escola.id).select().single()); apagarLogoAntigo(antigo); toast('Logo removido.'); $('#app').innerHTML = ''; go('escola', null, false); } finally { solta(); }
+}
+async function salvarCores(btn, padrao){
+  const dados = padrao ? { cor_primaria: null, cor_destaque: null } : { cor_primaria: $('#esCor1').value, cor_destaque: $('#esCor2').value };
+  const solta = travar(btn);
+  try { S.escola = await q(sb.from('escolas').update(dados).eq('id', S.escola.id).select().single()); aplicarMarca(); toast('Cores aplicadas.'); go('escola', null, false); } finally { solta(); }
+}
+async function salvarRetencao(btn){
+  const n = Number($('#esRet').value); if(!(n >= 12 && n <= 240)) return toast('Informe entre 12 e 240 meses.', 'erro');
+  const solta = travar(btn);
+  try { S.escola = await q(sb.from('escolas').update({ retencao_meses: n }).eq('id', S.escola.id).select().single()); toast('Prazo salvo.'); } finally { solta(); }
+}
+async function baixarBackup(btn, escolaId, slug){
+  const solta = travar(btn, 'Gerando...');
+  try { const d = await q(sb.rpc('backup_escola', escolaId ? { p_escola: escolaId } : {})); baixarArquivo('backup-' + (slug || S.escola.slug) + '-' + hojeISO() + '.json', JSON.stringify(d, null, 2), 'application/json'); toast('Backup baixado. Guarde em local seguro.'); } finally { solta(); }
+}
+async function verLimpeza(btn){
+  const solta = travar(btn);
+  let l; try { l = await q(sb.rpc('candidatos_limpeza')); } finally { solta(); }
+  S.limpeza = l;
+  const pessoas = [...new Set(l.map(x => x.pessoa))];
+  abrirModal('Documentos para descarte (LGPD)', l.length ?
+    '<p class="small">'+l.length+' documento(s) de '+pessoas.length+' cadastro(s) sem atividade há mais de '+esc(S.escola.retencao_meses || 60)+' meses. O cadastro, o histórico e os certificados continuam; só os arquivos são apagados.</p><div class="tw" style="max-height:300px;overflow:auto"><table><tr><th>Pessoa</th><th>Documento</th><th>Última atividade</th></tr>'+l.map(x => '<tr><td>'+esc(x.pessoa)+'</td><td>'+esc(x.tipo)+'</td><td>'+fmt(x.ultima_atividade)+'</td></tr>').join('')+'</table></div><p class="small muted">Recomendado: baixe o backup antes.</p>'
+    : '<p>Nenhum documento passou do prazo de guarda.</p>',
+    l.length ? '<button class="btn dg" onclick="executarLimpeza(this)">Apagar '+l.length+' arquivo(s)</button>' : '');
+}
+async function executarLimpeza(btn){
+  const l = S.limpeza || []; if(!l.length) return;
+  if(!confirm('Apagar definitivamente '+l.length+' arquivo(s)? Esta ação não pode ser desfeita.')) return;
+  const solta = travar(btn, 'Apagando...');
+  try {
+    const paths = l.map(x => x.arquivo_path).filter(Boolean);
+    for(let i = 0; i < paths.length; i += 100) await q(sb.storage.from('documentos').remove(paths.slice(i, i + 100)));
+    const ids = l.map(x => x.id);
+    for(let i = 0; i < ids.length; i += 100) await q(sb.from('documentos').delete().in('id', ids.slice(i, i + 100)));
+    S.limpeza = []; fecharModal(); toast(l.length + ' arquivo(s) apagado(s).');
+  } finally { solta(); }
+}
+async function baixarMeusDados(){
+  const P = S.pessoa || {};
+  const dados = { gerado_em: new Date().toISOString(), escola: S.escola ? S.escola.nome : '', conta: { nome: S.perfil.nome, email: S.perfil.email, cpf: S.perfil.cpf_cnpj, telefone: S.perfil.telefone },
+    cadastro: P.p, documentos: (P.docs || []).map(d => ({ tipo: d.tipo, situacao: d.status, enviado_em: d.enviado_em, validade: d.validade, observacao: d.obs_escola })),
+    pre_matriculas: (P.sols || []).map(s => ({ curso: s.cursos ? s.cursos.sigla + ' — ' + s.cursos.nome : '', situacao: s.status, criada_em: s.criado_em, turma: s.turmas ? s.turmas.codigo : null, retorno_escola: s.obs_escola })),
+    cursos_concluidos: (P.certs || []).map(c => ({ curso: c.cursos ? c.cursos.sigla + ' — ' + c.cursos.nome : '', conclusao: c.data_conclusao, origem: c.origem })) };
+  baixarArquivo('meus-dados-' + hojeISO() + '.json', JSON.stringify(dados, null, 2), 'application/json');
+  toast('Arquivo baixado. Os documentos enviados podem ser abertos aqui no portal.');
+}
+
+/* ================= DONO DO SISTEMA (FIEL) ================= */
+async function vFiel(){
+  if(!S.dono) return '<div class="card">Somente o dono do sistema acessa esta tela.</div>';
+  const l = await q(sb.rpc('painel_dono'));
+  const base = location.origin + location.pathname;
+  const tot = k => l.reduce((a, e) => a + Number(e[k] || 0), 0);
+  let h = '<div class="bar"><h2 style="margin:0">FIEL — escolas clientes</h2><span class="sp"></span><button class="btn" onclick="modalNovaEscola()">+ Nova escola</button></div>';
+  h += '<div class="kpis"><div class="kpi"><span>Escolas ativas</span><b>'+l.filter(e => e.ativa).length+' / '+l.length+'</b></div><div class="kpi"><span>Pessoas cadastradas</span><b>'+tot('pessoas')+'</b></div><div class="kpi"><span>Pré-matrículas (30 dias)</span><b>'+tot('pre_30d')+'</b></div><div class="kpi"><span>E-mails (30 dias)</span><b>'+tot('emails_30d')+'</b></div></div>';
+  h += l.map(e => {
+    const link = base + '?escola=' + encodeURIComponent(e.slug), atual = S.escola && S.escola.id === e.id;
+    return '<div class="card"><div class="bar"><h3 style="margin:0">'+esc(e.nome)+'</h3>'+(e.ativa ? '<span class="bdg ok">Ativa</span>' : '<span class="bdg bad">Bloqueada</span>')+(atual ? ' <span class="bdg nv">você está nesta</span>' : '')+'<span class="sp"></span>'+
+      (atual ? '' : '<button class="btn nv sm" onclick="administrarEscola(\''+e.id+'\',this)">Administrar</button>')+
+      '<button class="btn sec sm" onclick="copiarTexto(\''+esc(link)+'\')">Copiar link</button>'+
+      '<button class="btn sec sm" onclick="baixarBackup(this,\''+e.id+'\',\''+esc(e.slug)+'\')">Baixar backup</button>'+
+      '<button class="btn sec sm" onclick="modalAdminEscola(\''+e.id+'\')">Definir administrador</button>'+
+      '<button class="btn '+(e.ativa ? 'dg' : 'ok')+' sm" onclick="bloquearEscola(\''+e.id+'\','+(e.ativa ? 'false' : 'true')+')">'+(e.ativa ? 'Bloquear' : 'Desbloquear')+'</button></div>'+
+      '<p class="small muted" style="margin:0 0 6px">'+esc(link)+'</p>'+
+      '<div class="small">Pessoas: <b>'+e.pessoas+'</b> · Empresas: <b>'+e.empresas+'</b> · Equipe: <b>'+e.equipe+'</b> · Turmas: <b>'+e.turmas+'</b> · Documentos: <b>'+e.documentos+'</b> · Pré-matrículas 30d: <b>'+e.pre_30d+'</b> · E-mails 30d: <b>'+e.emails_30d+'</b></div>'+
+      '<div class="small muted">Administrador(es): '+esc(e.admins || 'nenhum')+' · Último acesso da equipe: '+(e.ultimo_acesso_equipe ? new Date(e.ultimo_acesso_equipe).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—')+'</div></div>';
+  }).join('');
+  h += '<p class="small muted">Para abrir uma escola: 1) "+ Nova escola"; 2) envie o link para o responsável criar a conta; 3) "Definir administrador" com o e-mail dele. Os cursos da Rondon são copiados como ponto de partida. Lembrete de backup chega toda segunda-feira por e-mail.</p>';
+  return h;
+}
+function copiarTexto(t){ (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Link copiado.'), () => prompt('Copie o link:', t)); }
+function modalNovaEscola(){
+  abrirModal('Nova escola', '<div class="fgrid"><label class="f w"><span>Nome da escola</span><input id="neNome" oninput="if(!$(\'#neSlug\').dataset.mexeu)$(\'#neSlug\').value=this.value.normalize(\'NFD\').replace(/[\\u0300-\\u036f]/g,\'\').toLowerCase().replace(/^escola( de)?( formacao)?( de)? /,\'\').replace(/[^a-z0-9]+/g,\'-\').replace(/^-|-$/g,\'\').slice(0,30)"></label>'+
+    '<label class="f"><span>Identificador no link</span><input id="neSlug" oninput="this.dataset.mexeu=1" placeholder="ex.: alfa"></label>'+
+    '<label class="f"><span>WhatsApp</span><input id="neWa"></label><label class="f w"><span>E-mail da escola</span><input id="neEmail" type="email"></label></div>',
+    '<button class="btn" onclick="criarEscola(this)">Criar escola</button>');
+}
+async function criarEscola(btn){
+  const solta = travar(btn);
+  try { await q(sb.rpc('criar_escola', { p_nome: $('#neNome').value, p_slug: $('#neSlug').value, p_email: $('#neEmail').value, p_whatsapp: $('#neWa').value })); fecharModal(); toast('Escola criada. Copie o link e envie ao responsável.'); recarregar(); } finally { solta(); }
+}
+function modalAdminEscola(id){
+  abrirModal('Definir administrador', '<p class="small muted">A pessoa precisa ter criado a conta pelo link da escola. Informe o e-mail que ela usou.</p><label class="f"><span>E-mail</span><input id="adEmail" type="email"></label>',
+    '<button class="btn" onclick="definirAdminEscola(\''+id+'\',this)">Definir</button>');
+}
+async function definirAdminEscola(id, btn){
+  const solta = travar(btn);
+  try { await q(sb.rpc('definir_admin_escola', { p_email: $('#adEmail').value, p_escola: id })); fecharModal(); toast('Administrador definido. Ele precisa sair e entrar de novo.'); recarregar(); } finally { solta(); }
+}
+async function bloquearEscola(id, ativa){
+  if(!confirm(ativa ? 'Desbloquear esta escola?' : 'Bloquear esta escola? A equipe, os alunos e as empresas perdem o acesso e os e-mails automáticos param. Os dados são mantidos.')) return;
+  await q(sb.from('escolas').update({ ativa }).eq('id', id));
+  toast(ativa ? 'Escola desbloqueada.' : 'Escola bloqueada.'); recarregar();
+}
+async function administrarEscola(id, btn){
+  if(!confirm('Entrar no painel desta escola? Seu usuário passa a enxergar os dados dela até você trocar de novo.')) return;
+  const solta = travar(btn);
+  try { await q(sb.rpc('trocar_minha_escola', { p_escola: id })); } finally { solta(); }
+  const { data } = await sb.auth.getSession(); S.perfil = null; S.escola = null; $('#app').innerHTML = ''; entrar(data.session);
+}
+
 async function testeEmail(btn){
   const solta = travar(btn, 'Enviando...');
   try { const para = await q(sb.rpc('email_teste')); toast('Teste enviado para '+para+'. Deve chegar em até 2 minutos.'); setTimeout(recarregar, 1500); } finally { solta(); }
@@ -1077,7 +1233,7 @@ async function definirFuncao(id, tipo){
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
