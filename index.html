@@ -103,7 +103,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.6.0';
+const VERSAO = '1.7.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -389,32 +389,36 @@ async function prepararArquivo(file){
   const c = document.createElement('canvas'); c.width = Math.round(img.width * f); c.height = Math.round(img.height * f);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(img.src);
   const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82));
-  return { blob, ext: 'jpg', tipo: 'image/jpeg', pdf: pdfDeJpeg(new Uint8Array(await blob.arrayBuffer()), c.width, c.height) };
+  return { blob, ext: 'jpg', tipo: 'image/jpeg', w: c.width, h: c.height };
 }
-/* PDF de uma página (A4) com a foto centralizada — formato aceito pelo GESP */
-function pdfDeJpeg(jpg, w, h){
-  const deitado = w > h, pw = deitado ? 841.89 : 595.28, ph = deitado ? 595.28 : 841.89, m = 20;
-  const k = Math.min((pw - 2*m) / w, (ph - 2*m) / h), dw = +(w*k).toFixed(2), dh = +(h*k).toFixed(2), x = +((pw - dw) / 2).toFixed(2), y = +((ph - dh) / 2).toFixed(2);
+/* PDF A4 com uma foto por página, centralizada — formato aceito pelo GESP */
+function pdfDeJpegs(fotos){
   const te = new TextEncoder(), partes = [], offs = []; let tam = 0;
   const add = d => { const b = typeof d === 'string' ? te.encode(d) : d; partes.push(b); tam += b.length; };
   const obj = (n, corpo) => { offs[n] = tam; add(n + ' 0 obj\n'); corpo(); add('\nendobj\n'); };
-  const cont = 'q ' + dw + ' 0 0 ' + dh + ' ' + x + ' ' + y + ' cm /Im0 Do Q';
+  const N = fotos.length, kids = fotos.map((_, i) => (3 + i*3) + ' 0 R').join(' ');
   add('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
   obj(1, () => add('<< /Type /Catalog /Pages 2 0 R >>'));
-  obj(2, () => add('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
-  obj(3, () => add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pw + ' ' + ph + '] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>'));
-  obj(4, () => { add('<< /Type /XObject /Subtype /Image /Width ' + w + ' /Height ' + h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n'); add(jpg); add('\nendstream'); });
-  obj(5, () => add('<< /Length ' + cont.length + ' >>\nstream\n' + cont + '\nendstream'));
-  const xref = tam;
-  add('xref\n0 6\n0000000000 65535 f \n' + [1,2,3,4,5].map(n => String(offs[n]).padStart(10, '0') + ' 00000 n \n').join('') + 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+  obj(2, () => add('<< /Type /Pages /Kids [' + kids + '] /Count ' + N + ' >>'));
+  fotos.forEach(({ jpg, w, h }, i) => {
+    const pg = 3 + i*3, im = pg + 1, ct = pg + 2;
+    const deitado = w > h, pw = deitado ? 841.89 : 595.28, ph = deitado ? 595.28 : 841.89, m = 20;
+    const k = Math.min((pw - 2*m) / w, (ph - 2*m) / h), dw = +(w*k).toFixed(2), dh = +(h*k).toFixed(2), x = +((pw - dw) / 2).toFixed(2), y = +((ph - dh) / 2).toFixed(2);
+    const cont = 'q ' + dw + ' 0 0 ' + dh + ' ' + x + ' ' + y + ' cm /Im0 Do Q';
+    obj(pg, () => add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pw + ' ' + ph + '] /Resources << /XObject << /Im0 ' + im + ' 0 R >> >> /Contents ' + ct + ' 0 R >>'));
+    obj(im, () => { add('<< /Type /XObject /Subtype /Image /Width ' + w + ' /Height ' + h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n'); add(jpg); add('\nendstream'); });
+    obj(ct, () => add('<< /Length ' + cont.length + ' >>\nstream\n' + cont + '\nendstream'));
+  });
+  const total = 3 + N*3, xref = tam;
+  let tab = 'xref\n0 ' + total + '\n0000000000 65535 f \n';
+  for(let n = 1; n < total; n++) tab += String(offs[n]).padStart(10, '0') + ' 00000 n \n';
+  add(tab + 'trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
   return new Blob(partes, { type: 'application/pdf' });
 }
 async function subirArquivo(pessoa, file){
   const arq = await prepararArquivo(file);
   const path = pessoa.escola_id + '/' + pessoa.id + '/' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)) + '.' + arq.ext;
   await q(sb.storage.from('documentos').upload(path, arq.blob, { contentType: arq.tipo, upsert: false }));
-  if(arq.pdf){ const pdf = path.replace(/\.jpg$/, '.pdf'); const r = await sb.storage.from('documentos').upload(pdf, arq.pdf, { contentType: 'application/pdf', upsert: false }); S.ultimoPdf = r.error ? null : pdf; }
-  else S.ultimoPdf = arq.ext === 'pdf' ? path : null;
   return path;
 }
 /* PDF de um documento: usa o já gerado, o próprio arquivo (se for PDF) ou gera agora a partir da foto */
@@ -422,14 +426,13 @@ async function pdfDoDocumento(d){
   const baixar = async path => { const { data, error } = await sb.storage.from('documentos').download(path); if(error) throw error; return data; };
   if(d.pdf_path) return baixar(d.pdf_path);
   if(/\.pdf$/i.test(d.arquivo_path)) return baixar(d.arquivo_path);
-  const foto = await baixar(d.arquivo_path);
-  const arq = await prepararArquivo(new File([foto], 'foto.jpg', { type: foto.type && foto.type.startsWith('image/') ? foto.type : 'image/jpeg' }));
-  if(staff()){ // guarda o PDF gerado para as próximas vezes
-    const pdf = d.arquivo_path.replace(/\.[^./]+$/, '') + '.pdf';
-    const up = await sb.storage.from('documentos').upload(pdf, arq.pdf, { contentType: 'application/pdf', upsert: false });
-    if(!up.error || /exist|duplicate/i.test(up.error.message || '')){ const r = await sb.from('documentos').update({ pdf_path: pdf }).eq('id', d.id); if(!r.error) d.pdf_path = pdf; }
+  const fotos = [];
+  for(const path of (d.paginas && d.paginas.length ? d.paginas : [d.arquivo_path])){
+    const foto = await baixar(path);
+    const arq = await prepararArquivo(new File([foto], 'foto.jpg', { type: foto.type && foto.type.startsWith('image/') ? foto.type : 'image/jpeg' }));
+    fotos.push({ jpg: new Uint8Array(await arq.blob.arrayBuffer()), w: arq.w, h: arq.h });
   }
-  return arq.pdf;
+  return pdfDeJpegs(fotos);
 }
 const nomeArq = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'documento';
 async function baixarPdfDoc(id, btn){
@@ -489,7 +492,9 @@ async function verArquivo(path, docId){
   if(error) return toast(traduzErro(error), 'erro');
   const url = data.signedUrl, pdf = /\.pdf$/i.test(path);
   const d = docId && S.pessoa ? S.pessoa.docs.find(x => x.id === docId) : null;
-  let corpo = '<div class="visor">' + (pdf ? '<iframe src="'+esc(url)+'" title="Documento"></iframe>' : '<img src="'+esc(url)+'" alt="Documento enviado">') + '</div>';
+  let extras = [];
+  if(d && d.paginas && d.paginas.length > 1){ const r = await sb.storage.from('documentos').createSignedUrls(d.paginas.slice(1), 600); extras = (r.data || []).map(x => x.signedUrl).filter(Boolean); }
+  let corpo = '<div class="visor">' + (pdf ? '<iframe src="'+esc(url)+'" title="Documento"></iframe>' : '<img src="'+esc(url)+'" alt="Documento enviado">' + extras.map((u, i) => '<div class="small muted" style="margin:8px 0 4px">Página '+(i + 2)+'</div><img src="'+esc(u)+'" alt="Página '+(i + 2)+'">').join('')) + '</div>';
   if(d) corpo += '<div class="small muted" style="margin-top:8px">'+(S.pessoa.p ? esc(S.pessoa.p.nome)+' · ' : '')+'Enviado em '+fmt(d.enviado_em)+(d.validade ? ' · validade '+fmt(d.validade) : '')+' · '+DOCST[estadoDoc(d)][0]+'</div>';
   let botoes = '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>' + (d && staff() ? '<button class="btn nv" onclick="baixarPdfDoc(\''+d.id+'\',this)">⬇ PDF (GESP)</button>' : '');
   if(d && staff()){
@@ -532,6 +537,9 @@ async function vPessoa(id){
     q(sb.from('certificacoes').select('*, cursos(sigla,nome,validade_meses)').eq('pessoa_id', id).order('data_conclusao', { ascending: false }))
   ]);
   S.pessoa = { p, docs, sols, certs };
+  for(const s of sols.filter(s => s.status === 'aprovada' && !s.turma_id)){ const r = await sb.rpc('posicao_fila', { p_solicitacao: s.id }); s._fila = r.error ? null : r.data; }
+  const turmaAtual = sols.find(s => s.status === 'matriculada' && s.turma_id);
+  const aulasAluno = turmaAtual && !staff() ? await q(sb.from('aulas').select('data,inicio,fim,horas,instrutor,conteudo,disciplinas(nome)').eq('turma_id', turmaAtual.turma_id).order('data').order('inicio')) : [];
   const souAluno = S.perfil.tipo === 'aluno';
   const ativas = sols.filter(s => !['cancelada','recusada','concluida','reprovado'].includes(s.status));
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? 'Meu cadastro' : p.nome)+'</h2><span class="sp"></span>';
@@ -554,12 +562,13 @@ async function vPessoa(id){
       (staff() ? (c.verificado ? '' : '<button class="btn ok sm" onclick="conferirCert(\''+c.id+'\')">Conferir</button> ')+'<button class="btn sec sm" onclick="excluirCert(\''+c.id+'\')">✕</button>' : '')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum curso registrado. '+(staff() ? '' : 'Se você já fez formação ou atualização, informe aqui para receber o aviso de vencimento.')+'</p>';
   h += '</div>';
+  if(aulasAluno.length) h += '<div class="card"><h3>Cronograma da minha turma</h3><div class="tw"><table><tr><th>Data</th><th>Horário</th><th>Disciplina</th><th>Instrutor</th></tr>'+aulasAluno.map(a => '<tr'+(a.data < hojeISO() ? ' style="opacity:.55"' : '')+'><td>'+fmt(a.data)+'</td><td>'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '—')+'</td><td>'+esc(a.disciplinas ? a.disciplinas.nome : (a.conteudo || '—'))+'</td><td>'+esc(a.instrutor || '—')+'</td></tr>').join('')+'</table></div></div>';
   // documentos
   const emAnalise = docs.filter(d => d.status === 'enviado').length;
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span>'+(staff() && emAnalise ? '<button class="btn ok sm" onclick="aprovarTodos()">Aprovar todos em análise ('+emAnalise+')</button>' : '')+(staff() && docs.length ? '<button class="btn nv sm" onclick="pdfsPessoa(this)">⬇ PDFs para o GESP</button>' : '')+'<button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
   h += docs.length ? '<div class="tw"><table><tr><th>Documento</th><th>Enviado</th><th>Validade</th><th>Situação</th><th></th></tr>'+docs.map(d => {
     const st = estadoDoc(d);
-    return '<tr><td>'+esc(d.tipo)+'</td><td>'+fmt(d.enviado_em)+'</td><td>'+(d.validade ? fmt(d.validade) : '—')+'</td><td>'+bdg(DOCST[st])+(d.motivo && d.status === 'recusado' ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
+    return '<tr><td>'+esc(d.tipo)+(d.paginas && d.paginas.length > 1 ? ' <span class="muted small">('+d.paginas.length+' pág.)</span>' : '')+'</td><td>'+fmt(d.enviado_em)+'</td><td>'+(d.validade ? bdgValidade(d.validade) : '—')+'</td><td>'+bdg(DOCST[st])+(d.motivo && d.status === 'recusado' ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
       '<td class="acoes"><button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\',\''+d.id+'\')">Ver</button>'+
       (staff() ? ' <button class="btn nv sm" onclick="baixarPdfDoc(\''+d.id+'\',this)" title="Baixar em PDF para o GESP">PDF</button>' : '')+
       (staff() ? ' <button class="btn ok sm" '+(d.status === 'aprovado' ? 'disabled' : '')+' onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" '+(d.status === 'recusado' ? 'disabled' : '')+' onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
@@ -588,6 +597,7 @@ function cardSolicitacao(s){
   const editavel = !staff() && ['rascunho','pendente'].includes(s.status);
   let h = '<div class="sol"><h4>'+esc(c.sigla || '')+' — '+esc(c.nome || '')+' '+bdg(SOL[s.status])+'</h4>';
   h += '<div class="small muted">Criada em '+fmt(s.criado_em)+(s.enviada_em ? ' · enviada em '+fmt(s.enviada_em) : '')+(s.obs ? ' · obs.: '+esc(s.obs) : '')+'</div>';
+  if(s._fila) h += '<div class="aviso ok" style="margin-top:8px"><b>Aprovado!</b> Você é o <b>'+s._fila+'º</b> da fila para a próxima turma deste curso. A escola vai avisar quando a turma for formada.</div>';
   if(s.turmas) h += '<div class="aviso ok" style="margin-top:8px"><b>Turma '+esc(s.turmas.codigo)+'</b> · '+fmt(s.turmas.inicio)+' a '+fmt(s.turmas.fim)+(s.turmas.turno ? ' · '+esc(s.turmas.turno) : '')+(s.turmas.local ? ' · '+esc(s.turmas.local) : '')+'</div>';
   if(s.obs_escola) h += '<div class="aviso '+(s.status === 'pendente' || s.status === 'recusada' ? 'bad' : 'ok')+'" style="margin-top:8px"><b>Retorno da escola:</b> '+esc(s.obs_escola)+'</div>';
   if(s.status === 'enviada' && !staff()) h += '<div class="aviso" style="margin-top:8px">Recebemos sua pré-matrícula. A escola vai analisar os documentos e você verá o resultado aqui.</div>';
@@ -635,26 +645,42 @@ async function criarSolicitacao(btn){
   const solta = travar(btn);
   try { await q(sb.from('solicitacoes').insert({ pessoa_id: S.pessoa.p.id, escola_id: S.pessoa.p.escola_id, curso_id, obs, status: 'rascunho' })); fecharModal(); toast('Pré-matrícula criada. Agora envie os documentos.'); recarregar(); } finally { solta(); }
 }
-function escolherArq(inp){ S.arqEnvio = inp.files[0] || null; const n = $('#enNome'); if(n) n.textContent = S.arqEnvio ? 'Selecionado: ' + S.arqEnvio.name : ''; }
+function escolherArq(inp){
+  const novos = [...(inp.files || [])]; inp.value = '';
+  if(!novos.length) return;
+  if(novos.some(f => f.type === 'application/pdf')){
+    if(novos.length > 1 || S.arqsEnvio.length) toast('PDF vai sozinho. Para juntar páginas, use fotos.', 'erro');
+    S.arqsEnvio = [novos.find(f => f.type === 'application/pdf')];
+  } else {
+    S.arqsEnvio = S.arqsEnvio.filter(f => f.type !== 'application/pdf').concat(novos).slice(0, 10);
+  }
+  mostrarArqs();
+}
+function mostrarArqs(){
+  const n = $('#enNome'); if(!n) return;
+  const l = S.arqsEnvio;
+  n.innerHTML = !l.length ? '' : (l[0].type === 'application/pdf' ? 'PDF selecionado: ' + esc(l[0].name) : '<b>' + l.length + ' página(s)</b> — vão virar um único PDF. ' + (l.length < 10 ? 'Tem verso ou mais páginas? Tire outra foto.' : '')) +
+    ' <a href="#" onclick="S.arqsEnvio=[];mostrarArqs();return false">Limpar</a>';
+}
 function modalEnvio(tipo){
-  S.arqEnvio = null;
+  S.arqsEnvio = [];
   const tipos = todosTiposDoc();
   abrirModal('Enviar documento',
     '<label class="f"><span>Documento</span><select id="enTipo">'+tipos.map(t => '<option'+(t === tipo ? ' selected' : '')+'>'+esc(t)+'</option>').join('')+'</select></label>'+
-    '<div class="f" style="margin-bottom:10px"><span class="small muted">Arquivo (foto ou PDF, até 10 MB)</span><div class="bar" style="margin:4px 0 4px"><button type="button" class="btn nv" onclick="document.getElementById(\'enCam\').click()">📷 Tirar foto</button><button type="button" class="btn sec" onclick="document.getElementById(\'enArq\').click()">Escolher arquivo</button></div><div id="enNome" class="small" style="color:var(--ok)"></div>'+
-    '<input id="enCam" type="file" accept="image/*" capture="environment" style="display:none" onchange="escolherArq(this)"><input id="enArq" type="file" accept="image/*,application/pdf" style="display:none" onchange="escolherArq(this)"></div>'+
-    '<label class="f"><span>Validade do documento (se houver)</span><input id="enVal" type="date"></label>'+
-    '<p class="small muted">Dica: fotografe o documento inteiro, em local claro, sem cortes e sem reflexo.</p>',
+    '<div class="f" style="margin-bottom:10px"><span class="small muted">Arquivo (foto ou PDF, até 10 MB)</span><div class="bar" style="margin:4px 0 4px"><button type="button" class="btn nv" onclick="document.getElementById(\'enCam\').click()">📷 Tirar foto</button><button type="button" class="btn sec" onclick="document.getElementById(\'enArq\').click()">Escolher arquivo(s)</button></div><div id="enNome" class="small" style="color:var(--ok)"></div>'+
+    '<input id="enCam" type="file" accept="image/*" capture="environment" style="display:none" onchange="escolherArq(this)"><input id="enArq" type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="escolherArq(this)"></div>'+
+    '<label class="f"><span>Validade do documento (certidões, atestados, laudos)</span><input id="enVal" type="date"></label>'+
+    '<p class="small muted">Dica: fotografe o documento inteiro, em local claro, sem cortes e sem reflexo. RG e CNH: uma foto da frente e outra do verso. Informando a validade, você recebe aviso antes de vencer.</p>',
     '<button class="btn" onclick="enviarDocumento(this)">Enviar</button>');
 }
 async function enviarDocumento(btn){
-  const f = S.arqEnvio, tipo = $('#enTipo').value, validade = $('#enVal').value || null;
-  if(!f) return toast('Escolha o arquivo.', 'erro');
+  const l = S.arqsEnvio || [], tipo = $('#enTipo').value, validade = $('#enVal').value || null;
+  if(!l.length) return toast('Escolha o arquivo ou tire a foto.', 'erro');
   const solta = travar(btn, 'Enviando...');
   try {
-    const p = S.pessoa.p;
-    const path = await subirArquivo(p, f);
-    await q(sb.from('documentos').insert({ pessoa_id: p.id, escola_id: p.escola_id, tipo, arquivo_path: path, pdf_path: S.ultimoPdf || null, nome_arquivo: f.name, validade }));
+    const p = S.pessoa.p, paths = [];
+    for(let i = 0; i < l.length; i++){ if(l.length > 1) btn.textContent = 'Enviando ' + (i + 1) + '/' + l.length + '...'; paths.push(await subirArquivo(p, l[i])); }
+    await q(sb.from('documentos').insert({ pessoa_id: p.id, escola_id: p.escola_id, tipo, arquivo_path: paths[0], paginas: paths.length > 1 ? paths : null, nome_arquivo: l[0].name, validade }));
     fecharModal(); toast('Documento enviado.'); recarregar();
   } catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); } finally { solta(); }
 }
@@ -730,7 +756,7 @@ async function conferirCert(id){ await q(sb.from('certificacoes').update({ verif
 async function excluirCert(id){ if(!confirm('Excluir este registro de curso?')) return; await q(sb.from('certificacoes').delete().eq('id', id)); recarregar(); }
 async function excluirPessoa(id){
   if(!confirm('Excluir esta pessoa e todos os seus documentos e registros? Essa ação não pode ser desfeita.')) return;
-  const docs = S.pessoa.docs.map(d => d.arquivo_path).concat(S.pessoa.docs.map(d => d.pdf_path).filter(Boolean), S.pessoa.certs.map(c => c.certificado_path).filter(Boolean));
+  const docs = S.pessoa.docs.map(d => d.arquivo_path).concat(S.pessoa.docs.map(d => d.pdf_path).filter(Boolean), S.pessoa.docs.flatMap(d => (d.paginas || []).slice(1)), S.pessoa.certs.map(c => c.certificado_path).filter(Boolean));
   if(docs.length) await sb.storage.from('documentos').remove(docs);
   await q(sb.from('pessoas').delete().eq('id', id)); toast('Excluído.'); S.hist.length ? voltar() : go('pessoas', null, false);
 }
@@ -954,9 +980,10 @@ async function vEmpresas(){
 }
 async function vCursos(){
   await carregarCursos();
+  const ds = await q(sb.from('disciplinas').select('curso_id').eq('escola_id', S.perfil.escola_id)); S.nDisc = {}; ds.forEach(d => S.nDisc[d.curso_id] = (S.nDisc[d.curso_id] || 0) + 1);
   return '<div class="bar"><h2 style="margin:0">Cursos</h2><span class="sp"></span><button class="btn" onclick="editarCurso(\'\')">+ Novo curso</button></div>'+
-    '<div class="card"><p class="small muted" style="margin-top:0">Revise nomes, validade e documentos exigidos conforme as normas vigentes da PF. Cursos com o mesmo <b>grupo de validade</b> renovam a mesma validade (ex.: CFV e CAV no grupo VIGILANTE).</p><div class="tw"><table><tr><th>Sigla</th><th>Nome</th><th>Grupo</th><th>Validade</th><th>Documentos</th><th>Ativo</th></tr>'+
-    S.cursos.map(c => '<tr class="click" onclick="editarCurso(\''+c.id+'\')"><td><b>'+esc(c.sigla)+'</b></td><td>'+esc(c.nome)+'</td><td>'+esc(c.grupo_validade || '—')+'</td><td>'+(c.validade_meses ? c.validade_meses+' meses' : 'Sem validade')+'</td><td>'+(c.docs_exigidos || []).length+'</td><td>'+(c.ativo ? '<span class="bdg ok">Sim</span>' : '<span class="bdg">Não</span>')+'</td></tr>').join('')+'</table></div></div>';
+    '<div class="card"><p class="small muted" style="margin-top:0">Revise nomes, validade e documentos exigidos conforme as normas vigentes da PF. Cursos com o mesmo <b>grupo de validade</b> renovam a mesma validade (ex.: CFV e CAV no grupo VIGILANTE).</p><div class="tw"><table><tr><th>Sigla</th><th>Nome</th><th>Grupo</th><th>Validade</th><th>Documentos</th><th>Disciplinas</th><th>Ativo</th></tr>'+
+    S.cursos.map(c => '<tr class="click" onclick="editarCurso(\''+c.id+'\')"><td><b>'+esc(c.sigla)+'</b></td><td>'+esc(c.nome)+'</td><td>'+esc(c.grupo_validade || '—')+'</td><td>'+(c.validade_meses ? c.validade_meses+' meses' : 'Sem validade')+'</td><td>'+(c.docs_exigidos || []).length+'</td><td><button class="btn sec sm" onclick="event.stopPropagation();modalDisciplinas(\''+c.id+'\')">Grade'+(S.nDisc && S.nDisc[c.id] ? ' ('+S.nDisc[c.id]+')' : '')+'</button></td><td>'+(c.ativo ? '<span class="bdg ok">Sim</span>' : '<span class="bdg">Não</span>')+'</td></tr>').join('')+'</table></div></div>';
 }
 function editarCurso(id){
   const c = id ? curso(id) : { sigla:'', nome:'', grupo_validade:'', validade_meses:0, docs_exigidos:[], ativo:true };
@@ -968,6 +995,24 @@ function editarCurso(id){
     '<label class="f"><span>Validade (meses, 0 = sem validade)</span><input id="cuMeses" type="number" min="0" value="'+esc(c.validade_meses)+'"></label>'+
     '<label class="f w"><span>Documentos exigidos — um por linha. Comece com ? os que são "se aplicável".</span><textarea id="cuDocs" rows="9">'+esc((c.docs_exigidos || []).join('\n'))+'</textarea></label></div>',
     '<button class="btn" onclick="salvarCurso(\''+id+'\',this)">Salvar</button>');
+}
+async function modalDisciplinas(cursoId){
+  const c = curso(cursoId), l = await q(sb.from('disciplinas').select('*').eq('curso_id', cursoId).order('ordem'));
+  abrirModal('Grade curricular — ' + c.sigla, '<p class="small muted" style="margin-top:0">Uma disciplina por linha, no formato <b>Nome ; horas</b>. Confira a grade e a carga horária na portaria vigente da PF.</p>'+
+    '<textarea id="dsLista" rows="14" style="width:100%" placeholder="Noções de Segurança Privada ; 10&#10;Armamento e Tiro ; 30">'+esc(l.map(d => d.nome + ' ; ' + Number(d.carga_horas)).join('\n'))+'</textarea><div id="dsTot" class="small muted"></div>',
+    '<button class="btn" onclick="salvarDisciplinas(\''+cursoId+'\',this)">Salvar grade</button>');
+  const tot = () => { const n = $('#dsLista').value.split('\n').map(x => Number((x.split(';')[1] || '').replace(',', '.')) || 0).reduce((a, b) => a + b, 0); $('#dsTot').textContent = 'Total: ' + n + ' horas'; };
+  $('#dsLista').oninput = tot; tot(); S._disc = l;
+}
+async function salvarDisciplinas(cursoId, btn){
+  const linhas = $('#dsLista').value.split('\n').map(x => x.trim()).filter(Boolean).map((x, i) => { const [n, h] = x.split(';'); return { nome: (n || '').trim(), carga_horas: Number(String(h || '0').replace(',', '.')) || 0, ordem: i }; }).filter(x => x.nome);
+  const antigas = S._disc || [], solta = travar(btn);
+  try {
+    for(const d of linhas){ const ex = antigas.find(a => a.nome.toLowerCase() === d.nome.toLowerCase()); if(ex){ ex._ok = true; await q(sb.from('disciplinas').update(d).eq('id', ex.id)); } else await q(sb.from('disciplinas').insert(Object.assign({ curso_id: cursoId, escola_id: S.perfil.escola_id }, d))); }
+    const sobras = antigas.filter(a => !a._ok).map(a => a.id);
+    if(sobras.length) await q(sb.from('disciplinas').delete().in('id', sobras));
+    fecharModal(); toast('Grade salva: ' + linhas.length + ' disciplina(s).'); recarregar();
+  } finally { solta(); }
 }
 async function salvarCurso(id, btn){
   const dados = { sigla: $('#cuSigla').value.trim().toUpperCase(), nome: $('#cuNome').value.trim(), grupo_validade: $('#cuGrupo').value.trim().toUpperCase() || null, validade_meses: Number($('#cuMeses').value || 0), ativo: $('#cuAtivo').value === '1', docs_exigidos: $('#cuDocs').value.split('\n').map(s => s.trim()).filter(Boolean) };
@@ -1050,7 +1095,7 @@ async function executarLimpeza(btn){
   if(!confirm('Apagar definitivamente '+l.length+' arquivo(s)? Esta ação não pode ser desfeita.')) return;
   const solta = travar(btn, 'Apagando...');
   try {
-    const paths = l.map(x => x.arquivo_path).concat(l.map(x => x.pdf_path)).filter(Boolean);
+    const paths = [...new Set(l.map(x => x.arquivo_path).concat(l.map(x => x.pdf_path), l.flatMap(x => x.paginas || [])).filter(Boolean))];
     for(let i = 0; i < paths.length; i += 100) await q(sb.storage.from('documentos').remove(paths.slice(i, i + 100)));
     const ids = l.map(x => x.id);
     for(let i = 0; i < ids.length; i += 100) await q(sb.from('documentos').delete().in('id', ids.slice(i, i + 100)));
@@ -1074,7 +1119,8 @@ async function vFiel(){
   const base = location.origin + location.pathname;
   const tot = k => l.reduce((a, e) => a + Number(e[k] || 0), 0);
   let h = '<div class="bar"><h2 style="margin:0">FIEL — escolas clientes</h2><span class="sp"></span><button class="btn" onclick="modalNovaEscola()">+ Nova escola</button></div>';
-  h += '<div class="kpis"><div class="kpi"><span>Escolas ativas</span><b>'+l.filter(e => e.ativa).length+' / '+l.length+'</b></div><div class="kpi"><span>Pessoas cadastradas</span><b>'+tot('pessoas')+'</b></div><div class="kpi"><span>Pré-matrículas (30 dias)</span><b>'+tot('pre_30d')+'</b></div><div class="kpi"><span>E-mails (30 dias)</span><b>'+tot('emails_30d')+'</b></div></div>';
+  h += '<div class="kpis"><div class="kpi"><span>Escolas ativas</span><b>'+l.filter(e => e.ativa).length+' / '+l.length+'</b></div><div class="kpi"><span>Pessoas cadastradas</span><b>'+tot('pessoas')+'</b></div><div class="kpi"><span>Pré-matrículas (30 dias)</span><b>'+tot('pre_30d')+'</b></div><div class="kpi"><span>E-mails (30 dias)</span><b>'+tot('emails_30d')+'</b></div><div class="kpi"><span>E-mails hoje (limite Brevo: 300)</span><b style="color:'+(tot('emails_hoje') >= 250 ? 'var(--bad)' : tot('emails_hoje') >= 200 ? 'var(--warn)' : 'inherit')+'">'+tot('emails_hoje')+' / 300</b></div></div>'+
+    (tot('emails_hoje') >= 250 ? '<div class="aviso bad">Perto do limite diário do Brevo gratuito. E-mails acima de 300 no dia ficam com erro; considere o plano pago do Brevo.</div>' : '');
   h += l.map(e => {
     const link = base + '?escola=' + encodeURIComponent(e.slug), atual = S.escola && S.escola.id === e.id;
     return '<div class="card"><div class="bar"><h3 style="margin:0">'+esc(e.nome)+'</h3>'+(e.ativa ? '<span class="bdg ok">Ativa</span>' : '<span class="bdg bad">Bloqueada</span>')+(atual ? ' <span class="bdg nv">você está nesta</span>' : '')+'<span class="sp"></span>'+
@@ -1203,10 +1249,19 @@ async function vTurma(id){
   const t = await q(sb.from('turmas').select('*, cursos(sigla,nome)').eq('id', id).single());
   const [mats, disp] = await Promise.all([
     q(sb.from('solicitacoes').select('id,status,frequencia,nota,resultado,pessoa_id,pessoas(nome,cpf,rg,nascimento,sexo,escolaridade,telefone,email,endereco,empresa_id)').eq('turma_id', id)),
-    q(sb.from('solicitacoes').select('id,pessoa_id,criado_em,pessoas(nome,cpf,empresa_id)').eq('escola_id', t.escola_id).eq('curso_id', t.curso_id).eq('status', 'aprovada').is('turma_id', null))
+    q(sb.from('solicitacoes').select('id,pessoa_id,criado_em,analisado_em,pessoas(nome,cpf,empresa_id)').eq('escola_id', t.escola_id).eq('curso_id', t.curso_id).eq('status', 'aprovada').is('turma_id', null))
   ]);
   mats.sort((a, b) => (a.pessoas ? a.pessoas.nome : '').localeCompare(b.pessoas ? b.pessoas.nome : ''));
-  S.turma = { t, mats };
+  disp.sort((a, b) => String(a.analisado_em || a.criado_em).localeCompare(String(b.analisado_em || b.criado_em)) || String(a.id).localeCompare(String(b.id)));
+  const pids = mats.map(m => m.pessoa_id);
+  const [docsT, aulas, discs] = await Promise.all([
+    pids.length ? q(sb.from('documentos').select('pessoa_id,tipo,validade,status,enviado_em').in('pessoa_id', pids).order('enviado_em', { ascending: false })) : [],
+    q(sb.from('aulas').select('*, disciplinas(nome)').eq('turma_id', id).order('data').order('inicio')),
+    q(sb.from('disciplinas').select('*').eq('curso_id', t.curso_id).order('ordem'))
+  ]);
+  const limiteDoc = t.inicio && t.inicio > hojeISO() ? t.inicio : hojeISO();
+  const alertaDocs = pid => docsParaGesp(docsT.filter(d => d.pessoa_id === pid)).filter(d => d.validade && d.validade < limiteDoc).map(d => d.tipo + ' (' + fmt(d.validade) + ')');
+  S.turma = { t, mats, aulas, discs };
   const fechada = t.status === 'concluida' || t.status === 'cancelada';
   const emp = id => id && S.empresas[id] ? S.empresas[id].nome : 'Particular';
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(t.codigo)+' '+bdg(TST[t.status])+'</h2><span class="sp"></span>'+
@@ -1221,25 +1276,127 @@ async function vTurma(id){
   h += '<div class="card"><h3>Checklist GESP</h3>'+g.map(([k, l]) => '<label class="chk" style="font-size:15px;padding:6px 0;border-bottom:1px dashed var(--bd);margin:0"><input type="checkbox"'+(t[k] ? ' checked' : '')+' onchange="marcarGesp(\''+t.id+'\',\''+k+'\',this.checked)"> <span style="flex:1">'+l+'</span>'+(t[k] ? '<span class="small muted">em '+fmt(t[k])+'</span>' : '')+'</label>').join('')+'</div>';
   const ap = mats.filter(m => m.resultado === 'aprovado').length, rp = mats.filter(m => m.resultado === 'reprovado').length;
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Alunos da turma ('+mats.length+')</h3><span class="sp"></span><span class="small muted">'+ap+' aprovado(s) · '+rp+' reprovado(s) · '+(mats.length - ap - rp)+' sem resultado</span></div>';
-  h += mats.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Freq. %</th><th>Nota</th><th>Resultado</th><th>Situação</th><th></th></tr>'+mats.map(m => {
+  const comAlerta = mats.filter(m => alertaDocs(m.pessoa_id).length).length;
+  if(comAlerta) h += '<div class="aviso bad">'+comAlerta+' aluno(s) com documento vencido'+(t.inicio && t.inicio > hojeISO() ? ' ou que vence antes do início da turma ('+fmt(t.inicio)+')' : '')+'. Peça o documento atualizado antes de enviar ao GESP.</div>';
+  h += mats.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Empresa</th><th>Docs</th><th>Freq. %</th><th>Nota</th><th>Resultado</th><th>Situação</th><th></th></tr>'+mats.map(m => {
     const p = m.pessoas || {}, dis = fechada || m.status !== 'matriculada' ? ' disabled' : '';
     return '<tr><td><a href="#" onclick="go(\'pessoa\',\''+m.pessoa_id+'\');return false"><b>'+esc(p.nome)+'</b></a></td><td>'+fmtDoc(p.cpf)+'</td><td class="small">'+esc(emp(p.empresa_id))+'</td>'+
+      '<td>'+(alertaDocs(m.pessoa_id).length ? '<span class="bdg bad" title="'+esc(alertaDocs(m.pessoa_id).join(', '))+'">Vencido: '+alertaDocs(m.pessoa_id).length+'</span>' : '<span class="bdg ok">OK</span>')+'</td>'+
       '<td><input type="number" min="0" max="100" step="0.1" style="width:80px" value="'+esc(m.frequencia ?? '')+'"'+dis+' onchange="salvarMat(\''+m.id+'\',\'frequencia\',this.value)"></td>'+
       '<td><input type="number" min="0" max="10" step="0.1" style="width:80px" value="'+esc(m.nota ?? '')+'"'+dis+' onchange="salvarMat(\''+m.id+'\',\'nota\',this.value)"></td>'+
       '<td><select style="width:130px"'+dis+' onchange="salvarMat(\''+m.id+'\',\'resultado\',this.value)"><option value="">—</option><option value="aprovado"'+(m.resultado === 'aprovado' ? ' selected' : '')+'>Aprovado</option><option value="reprovado"'+(m.resultado === 'reprovado' ? ' selected' : '')+'>Reprovado</option></select></td>'+
       '<td>'+bdg(SOL[m.status] || ['—',''])+'</td><td>'+(dis ? '' : '<button class="btn sec sm" title="Tirar da turma" onclick="tirarDaTurma(\''+m.id+'\')">✕</button>')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum aluno nesta turma ainda.</p>';
   h += '</div>';
+  h += cardCronograma(t, mats, aulas, discs, fechada);
   if(!fechada){
     const livres = t.vagas ? Math.max(0, t.vagas - mats.length) : null;
-    h += '<div class="card"><div class="bar"><h3 style="margin:0">Adicionar alunos aprovados ('+disp.length+')</h3><span class="sp"></span>'+(livres !== null ? '<span class="small muted">'+livres+' vaga(s) livre(s)</span>' : '')+'</div>';
-    h += disp.length ? '<p class="small muted" style="margin-top:0">Alunos com pré-matrícula <b>aprovada</b> neste curso e ainda sem turma.</p><div class="tw"><table><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.selMat\').forEach(c=>c.checked=this.checked)"></th><th>Nome</th><th>CPF</th><th>Empresa</th><th>Pré-matrícula</th></tr>'+disp.map(d => '<tr><td><input type="checkbox" class="selMat" value="'+d.id+'"></td><td>'+esc(d.pessoas ? d.pessoas.nome : '')+'</td><td>'+fmtDoc(d.pessoas ? d.pessoas.cpf : '')+'</td><td class="small">'+esc(emp(d.pessoas && d.pessoas.empresa_id))+'</td><td>'+fmt(d.criado_em)+'</td></tr>').join('')+'</table></div><button class="btn" style="margin-top:10px" onclick="matricularSel(\''+t.id+'\',this)">Matricular selecionados</button>'
+    h += '<div class="card"><div class="bar"><h3 style="margin:0">Fila de espera — aprovados sem turma ('+disp.length+')</h3><span class="sp"></span>'+(livres !== null ? '<span class="small muted">'+livres+' vaga(s) livre(s)</span>' : '')+'</div>';
+    h += disp.length ? '<p class="small muted" style="margin-top:0">Por ordem de aprovação: quem foi aprovado primeiro entra primeiro. '+(livres !== null ? 'Os '+Math.min(livres, disp.length)+' primeiro(s) já vêm marcados.' : '')+' O aluno vê a posição dele no portal.</p><div class="tw"><table><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.selMat\').forEach(c=>c.checked=this.checked)"></th><th>Fila</th><th>Nome</th><th>CPF</th><th>Empresa</th><th>Aprovado em</th></tr>'+disp.map((d, i) => '<tr><td><input type="checkbox" class="selMat" value="'+d.id+'"'+(livres !== null && i < livres ? ' checked' : '')+'></td><td><b>'+(i + 1)+'º</b></td><td>'+esc(d.pessoas ? d.pessoas.nome : '')+'</td><td>'+fmtDoc(d.pessoas ? d.pessoas.cpf : '')+'</td><td class="small">'+esc(emp(d.pessoas && d.pessoas.empresa_id))+'</td><td>'+fmt(d.analisado_em || d.criado_em)+'</td></tr>').join('')+'</table></div><button class="btn" style="margin-top:10px" onclick="matricularSel(\''+t.id+'\',this)">Matricular selecionados</button>'
       : '<p class="muted">Nenhum aluno aprovado aguardando turma neste curso.</p>';
     h += '</div>';
   }
   if(t.obs) h += '<p class="small muted">Obs.: '+esc(t.obs)+'</p>';
   return h;
 }
+/* ---------- cronograma de aulas e chamada ---------- */
+function cardCronograma(t, mats, aulas, discs, fechada){
+  const hProg = {}, hDada = {};
+  aulas.forEach(a => { const k = a.disciplina_id || '-'; hProg[k] = (hProg[k] || 0) + Number(a.horas || 0); if(a.chamada_feita) hDada[k] = (hDada[k] || 0) + Number(a.horas || 0); });
+  const totProg = aulas.reduce((s, a) => s + Number(a.horas || 0), 0), totCarga = discs.reduce((s, d) => s + Number(d.carga_horas || 0), 0), feitas = aulas.filter(a => a.chamada_feita).length;
+  let h = '<div class="card"><div class="bar"><h3 style="margin:0">Cronograma de aulas ('+aulas.length+')</h3><span class="sp"></span>'+
+    (aulas.length ? '<button class="btn sec sm" onclick="imprimirCronograma()">Imprimir cronograma</button>' : '')+
+    (fechada ? '' : (feitas ? '<button class="btn nv sm" onclick="aplicarFrequencia(\''+t.id+'\',this)">Calcular frequência pela chamada</button>' : '')+'<button class="btn sm" onclick="modalAula(\'\')">+ Aula</button>')+'</div>';
+  if(discs.length) h += '<div class="tw"><table><tr><th>Disciplina</th><th>Carga exigida</th><th>Programado</th><th>Ministrado (chamada)</th></tr>'+discs.map(d => {
+      const pr = hProg[d.id] || 0, dd = hDada[d.id] || 0, falta = Number(d.carga_horas) - pr;
+      return '<tr><td>'+esc(d.nome)+'</td><td>'+Number(d.carga_horas)+' h</td><td>'+pr+' h '+(falta > 0 ? '<span class="bdg warn">faltam '+falta+' h</span>' : '<span class="bdg ok">ok</span>')+'</td><td>'+dd+' h</td></tr>';
+    }).join('')+'<tr><td><b>Total</b></td><td><b>'+totCarga+' h</b></td><td><b>'+totProg+' h</b></td><td><b>'+Object.values(hDada).reduce((a, b) => a + b, 0)+' h</b></td></tr></table></div>';
+  else h += '<p class="small muted">Cadastre as disciplinas e a carga horária do curso em <a href="#" onclick="go(\'cursos\');return false">Cursos</a> para acompanhar se a turma cumpre a carga exigida.</p>';
+  h += aulas.length ? '<div class="tw" style="margin-top:10px"><table><tr><th>Data</th><th>Horário</th><th>Disciplina</th><th>Instrutor</th><th>Horas</th><th>Chamada</th><th></th></tr>'+aulas.map(a =>
+      '<tr><td>'+fmt(a.data)+' <span class="muted small">'+['dom','seg','ter','qua','qui','sex','sáb'][new Date(a.data + 'T12:00').getDay()]+'</span></td><td>'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '—')+'</td><td>'+esc(a.disciplinas ? a.disciplinas.nome : (a.conteudo || '—'))+'</td><td>'+esc(a.instrutor || '—')+'</td><td>'+Number(a.horas)+'</td>'+
+      '<td>'+(a.chamada_feita ? '<span class="bdg ok">Feita</span>' : '<span class="bdg">Pendente</span>')+'</td><td class="acoes">'+
+      (mats.length && !fechada ? '<button class="btn '+(a.chamada_feita ? 'sec' : 'ok')+' sm" onclick="modalChamada(\''+a.id+'\')">Chamada</button> ' : '')+
+      '<button class="btn sec sm" onclick="listaPresenca(\''+a.id+'\')" title="Imprimir lista de presença desta aula">🖨</button>'+
+      (fechada ? '' : ' <button class="btn sec sm" onclick="modalAula(\''+a.id+'\')">Editar</button>')+'</td></tr>').join('')+'</table></div>'
+    : '<p class="muted">Nenhuma aula lançada. Use "+ Aula" para montar o cronograma.</p>';
+  return h + '</div>';
+}
+function modalAula(id){
+  const { t, aulas, discs } = S.turma;
+  const ult = aulas[aulas.length - 1];
+  const a = id ? aulas.find(x => x.id === id) : { data: ult ? addDias(ult.data, 1) : (t.inicio || hojeISO()), inicio: ult ? ult.inicio : '', fim: ult ? ult.fim : '', horas: ult ? ult.horas : 4, disciplina_id: '', instrutor: ult ? ult.instrutor : (t.instrutores || ''), conteudo: '' };
+  abrirModal(id ? 'Editar aula' : 'Nova aula', '<div class="fgrid">'+
+    '<label class="f"><span>Data</span><input id="auData" type="date" value="'+esc(a.data)+'"></label>'+
+    '<label class="f"><span>Horas-aula</span><input id="auHoras" type="number" min="0.5" step="0.5" value="'+esc(a.horas)+'"></label>'+
+    '<label class="f"><span>Início</span><input id="auIni" type="time" value="'+esc((a.inicio || '').slice(0, 5))+'"></label>'+
+    '<label class="f"><span>Fim</span><input id="auFim" type="time" value="'+esc((a.fim || '').slice(0, 5))+'"></label>'+
+    '<label class="f w"><span>Disciplina</span><select id="auDisc"><option value="">—</option>'+discs.map(d => '<option value="'+d.id+'"'+(d.id === a.disciplina_id ? ' selected' : '')+'>'+esc(d.nome)+'</option>').join('')+'</select></label>'+
+    '<label class="f w"><span>Instrutor</span><input id="auInst" value="'+esc(a.instrutor)+'"></label>'+
+    '<label class="f w"><span>Conteúdo / observação</span><input id="auCont" value="'+esc(a.conteudo)+'"></label>'+
+    (id ? '' : '<label class="f w"><span>Repetir nos próximos dias (mesmo horário)</span><select id="auRep"><option value="0">Não repetir</option><option value="seg-sex">Até o fim da turma, de segunda a sexta</option><option value="seg-sab">Até o fim da turma, de segunda a sábado</option><option value="todos">Até o fim da turma, todos os dias</option></select></label>')+
+    '</div>',
+    (id ? '<button class="btn dg" onclick="excluirAula(\''+id+'\')">Excluir</button>' : '')+'<button class="btn" onclick="salvarAula(\''+(id || '')+'\',this)">Salvar</button>');
+}
+async function salvarAula(id, btn){
+  const { t } = S.turma;
+  const dados = { data: $('#auData').value, horas: Number($('#auHoras').value || 0), inicio: $('#auIni').value || null, fim: $('#auFim').value || null, disciplina_id: $('#auDisc').value || null, instrutor: $('#auInst').value.trim() || null, conteudo: $('#auCont').value.trim() || null };
+  if(!dados.data || !(dados.horas > 0)) return toast('Informe a data e as horas-aula.', 'erro');
+  const solta = travar(btn);
+  try {
+    if(id) await q(sb.from('aulas').update(dados).eq('id', id));
+    else {
+      const rep = $('#auRep').value, linhas = [Object.assign({ turma_id: t.id, escola_id: t.escola_id }, dados)];
+      if(rep !== '0'){
+        if(!t.fim) return toast('Informe o término da turma (Editar) para repetir as aulas.', 'erro');
+        for(let d = addDias(dados.data, 1); d <= t.fim && linhas.length < 200; d = addDias(d, 1)){
+          const dw = new Date(d + 'T12:00').getDay();
+          if((rep === 'seg-sex' && (dw === 0 || dw === 6)) || (rep === 'seg-sab' && dw === 0)) continue;
+          linhas.push(Object.assign({}, linhas[0], { data: d }));
+        }
+      }
+      await q(sb.from('aulas').insert(linhas));
+      if(linhas.length > 1) toast(linhas.length + ' aulas lançadas.');
+    }
+    fecharModal(); recarregar();
+  } finally { solta(); }
+}
+async function excluirAula(id){ if(!confirm('Excluir esta aula (e a chamada dela)?')) return; await q(sb.from('aulas').delete().eq('id', id)); fecharModal(); recarregar(); }
+async function modalChamada(aulaId){
+  const { mats, aulas } = S.turma, a = aulas.find(x => x.id === aulaId);
+  const ativos = mats.filter(m => m.status === 'matriculada');
+  const pres = await q(sb.from('presencas').select('solicitacao_id,presente').eq('aula_id', aulaId)), mapa = {};
+  pres.forEach(p => mapa[p.solicitacao_id] = p.presente);
+  abrirModal('Chamada — ' + fmt(a.data) + (a.disciplinas ? ' · ' + a.disciplinas.nome : ''),
+    '<p class="small muted" style="margin-top:0">Desmarque quem faltou.'+(a.chamada_feita ? ' Chamada já registrada; você pode corrigir.' : '')+'</p>'+
+    '<div class="bar"><button class="btn sec sm" onclick="document.querySelectorAll(\'.chPres\').forEach(c=>c.checked=true)">Todos presentes</button><button class="btn sec sm" onclick="document.querySelectorAll(\'.chPres\').forEach(c=>c.checked=false)">Desmarcar todos</button></div>'+
+    ativos.map(m => '<label class="chk" style="padding:6px 0;border-bottom:1px dashed var(--bd);margin:0"><input type="checkbox" class="chPres" value="'+m.id+'"'+(mapa[m.id] === false ? '' : ' checked')+'> <span>'+esc(m.pessoas ? m.pessoas.nome : '')+'</span></label>').join(''),
+    '<button class="btn" onclick="salvarChamada(\''+aulaId+'\',this)">Salvar chamada</button>');
+}
+async function salvarChamada(aulaId, btn){
+  const linhas = [...document.querySelectorAll('.chPres')].map(c => ({ aula_id: aulaId, solicitacao_id: c.value, presente: c.checked }));
+  const solta = travar(btn);
+  try {
+    if(linhas.length) await q(sb.from('presencas').upsert(linhas, { onConflict: 'aula_id,solicitacao_id' }));
+    await q(sb.from('aulas').update({ chamada_feita: true }).eq('id', aulaId));
+    const f = linhas.filter(l => !l.presente).length;
+    fecharModal(); toast('Chamada salva: ' + (linhas.length - f) + ' presente(s), ' + f + ' falta(s).'); recarregar();
+  } finally { solta(); }
+}
+async function aplicarFrequencia(turmaId, btn){
+  if(!confirm('Calcular a frequência de cada aluno pelas chamadas registradas? Isso substitui a frequência digitada manualmente.')) return;
+  const solta = travar(btn, 'Calculando...');
+  try { const n = await q(sb.rpc('aplicar_frequencia', { p_turma: turmaId })); toast('Frequência atualizada para ' + n + ' aluno(s).'); recarregar(); } finally { solta(); }
+}
+function imprimirCronograma(){
+  const { t, aulas, discs } = S.turma;
+  imprimir('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cronograma</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:18px}h2,p{margin:3px 0}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border:1px solid #777;padding:6px 5px;text-align:left}th{background:#eee}</style></head><body>'+
+    '<h2>'+esc(S.escola ? S.escola.nome : '')+'</h2><p><b>Cronograma de instrução — '+esc(t.cursos ? t.cursos.sigla + ' — ' + t.cursos.nome : '')+'</b></p>'+
+    '<p>Turma: <b>'+esc(t.codigo)+'</b> · Período: '+fmt(t.inicio)+' a '+fmt(t.fim)+(t.turno ? ' · '+esc(t.turno) : '')+(t.local ? ' · '+esc(t.local) : '')+'</p>'+
+    '<table><tr><th>Data</th><th>Horário</th><th>Disciplina</th><th>Conteúdo</th><th>Instrutor</th><th>h/a</th></tr>'+aulas.map(a => '<tr><td>'+fmt(a.data)+'</td><td>'+(a.inicio ? a.inicio.slice(0, 5) + (a.fim ? '–' + a.fim.slice(0, 5) : '') : '')+'</td><td>'+esc(a.disciplinas ? a.disciplinas.nome : '')+'</td><td>'+esc(a.conteudo || '')+'</td><td>'+esc(a.instrutor || '')+'</td><td>'+Number(a.horas)+'</td></tr>').join('')+
+    '<tr><td colspan="5"><b>Total</b></td><td><b>'+aulas.reduce((s, a) => s + Number(a.horas || 0), 0)+'</b></td></tr></table>'+
+    (discs.length ? '<p style="margin-top:12px"><b>Carga horária por disciplina:</b> '+discs.map(d => esc(d.nome)+' '+Number(d.carga_horas)+' h').join(' · ')+'</p>' : '')+'</body></html>');
+}
+
 async function marcarGesp(id, campo, marcado){ await q(sb.from('turmas').update({ [campo]: marcado ? hojeISO() : null }).eq('id', id)); recarregar(); }
 async function salvarMat(id, campo, valor){
   let v = valor === '' ? null : valor;
@@ -1252,12 +1409,12 @@ async function matricularSel(turmaId, btn){
   const ids = [...document.querySelectorAll('.selMat:checked')].map(c => c.value);
   if(!ids.length) return toast('Selecione pelo menos um aluno.', 'erro');
   const t = S.turma.t;
-  if(t.vagas && S.turma.mats.length + ids.length > t.vagas && !confirm('Isso passa do limite de '+t.vagas+' vagas. Matricular mesmo assim?')) return;
+  if(t.vagas && S.turma.mats.length + ids.length > t.vagas && !confirm('Isso passa do limite de '+t.vagas+' vagas ('+(S.turma.mats.length + ids.length)+' alunos). Matricular mesmo assim?')) return;
   const solta = travar(btn, 'Matriculando...');
   try { await q(sb.from('solicitacoes').update({ turma_id: turmaId, status: 'matriculada' }).in('id', ids)); toast(ids.length+' aluno(s) matriculado(s).'); recarregar(); } finally { solta(); }
 }
 async function tirarDaTurma(id){
-  if(!confirm('Tirar este aluno da turma? Ele volta para a lista de aprovados aguardando turma.')) return;
+  if(!confirm('Tirar este aluno da turma? Ele volta para a fila de espera e a vaga fica livre para o próximo da fila.')) return;
   await q(sb.from('solicitacoes').update({ turma_id: null, status: 'aprovada', frequencia: null, nota: null, resultado: null }).eq('id', id));
   recarregar();
 }
@@ -1285,12 +1442,14 @@ function imprimir(html){
   const d = f.contentDocument; d.open(); d.write(html); d.close();
   setTimeout(() => { f.contentWindow.focus(); f.contentWindow.print(); }, 400);
 }
-function listaPresenca(){
+function listaPresenca(aulaId){
   const { t, mats } = S.turma; if(!mats.length) return toast('Turma sem alunos.', 'erro');
+  const a = aulaId && S.turma.aulas ? S.turma.aulas.find(x => x.id === aulaId) : null;
   imprimir('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Lista de presença</title><style>body{font-family:Arial,sans-serif;font-size:12px;padding:18px}h2,p{margin:3px 0}table{width:100%;border-collapse:collapse;margin-top:12px}td,th{border:1px solid #777;padding:7px 5px;text-align:left}th{background:#eee}</style></head><body>'+
     '<h2>'+esc(S.escola ? S.escola.nome : '')+'</h2><p><b>Lista de presença — '+esc(t.cursos ? t.cursos.sigla + ' — ' + t.cursos.nome : '')+'</b></p>'+
     '<p>Turma: <b>'+esc(t.codigo)+'</b> · Período: '+fmt(t.inicio)+' a '+fmt(t.fim)+(t.turno ? ' · '+esc(t.turno) : '')+(t.local ? ' · '+esc(t.local) : '')+'</p>'+
-    '<p>Data: ____/____/________ · Disciplina: ______________________________ · Instrutor: ______________________________</p>'+
+    (a ? '<p>Data: <b>'+fmt(a.data)+'</b>'+(a.inicio ? ' · Horário: '+a.inicio.slice(0, 5)+(a.fim ? '–'+a.fim.slice(0, 5) : '') : '')+' · Disciplina: <b>'+esc(a.disciplinas ? a.disciplinas.nome : (a.conteudo || '________________'))+'</b> · Instrutor: '+esc(a.instrutor || '________________')+'</p>'
+       : '<p>Data: ____/____/________ · Disciplina: ______________________________ · Instrutor: ______________________________</p>')+
     '<table><tr><th style="width:30px">Nº</th><th>Nome</th><th style="width:120px">CPF</th><th style="width:240px">Assinatura</th></tr>'+mats.map((m, i) => '<tr><td>'+(i + 1)+'</td><td>'+esc(m.pessoas ? m.pessoas.nome : '')+'</td><td>'+fmtDoc(m.pessoas ? m.pessoas.cpf : '')+'</td><td></td></tr>').join('')+'</table></body></html>');
 }
 
