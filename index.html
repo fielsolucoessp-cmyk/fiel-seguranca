@@ -103,7 +103,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.5.0';
+const VERSAO = '1.6.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -389,13 +389,100 @@ async function prepararArquivo(file){
   const c = document.createElement('canvas'); c.width = Math.round(img.width * f); c.height = Math.round(img.height * f);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(img.src);
   const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.82));
-  return { blob, ext: 'jpg', tipo: 'image/jpeg' };
+  return { blob, ext: 'jpg', tipo: 'image/jpeg', pdf: pdfDeJpeg(new Uint8Array(await blob.arrayBuffer()), c.width, c.height) };
+}
+/* PDF de uma página (A4) com a foto centralizada — formato aceito pelo GESP */
+function pdfDeJpeg(jpg, w, h){
+  const deitado = w > h, pw = deitado ? 841.89 : 595.28, ph = deitado ? 595.28 : 841.89, m = 20;
+  const k = Math.min((pw - 2*m) / w, (ph - 2*m) / h), dw = +(w*k).toFixed(2), dh = +(h*k).toFixed(2), x = +((pw - dw) / 2).toFixed(2), y = +((ph - dh) / 2).toFixed(2);
+  const te = new TextEncoder(), partes = [], offs = []; let tam = 0;
+  const add = d => { const b = typeof d === 'string' ? te.encode(d) : d; partes.push(b); tam += b.length; };
+  const obj = (n, corpo) => { offs[n] = tam; add(n + ' 0 obj\n'); corpo(); add('\nendobj\n'); };
+  const cont = 'q ' + dw + ' 0 0 ' + dh + ' ' + x + ' ' + y + ' cm /Im0 Do Q';
+  add('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  obj(1, () => add('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2, () => add('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+  obj(3, () => add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pw + ' ' + ph + '] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>'));
+  obj(4, () => { add('<< /Type /XObject /Subtype /Image /Width ' + w + ' /Height ' + h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n'); add(jpg); add('\nendstream'); });
+  obj(5, () => add('<< /Length ' + cont.length + ' >>\nstream\n' + cont + '\nendstream'));
+  const xref = tam;
+  add('xref\n0 6\n0000000000 65535 f \n' + [1,2,3,4,5].map(n => String(offs[n]).padStart(10, '0') + ' 00000 n \n').join('') + 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+  return new Blob(partes, { type: 'application/pdf' });
 }
 async function subirArquivo(pessoa, file){
   const arq = await prepararArquivo(file);
   const path = pessoa.escola_id + '/' + pessoa.id + '/' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)) + '.' + arq.ext;
   await q(sb.storage.from('documentos').upload(path, arq.blob, { contentType: arq.tipo, upsert: false }));
+  if(arq.pdf){ const pdf = path.replace(/\.jpg$/, '.pdf'); const r = await sb.storage.from('documentos').upload(pdf, arq.pdf, { contentType: 'application/pdf', upsert: false }); S.ultimoPdf = r.error ? null : pdf; }
+  else S.ultimoPdf = arq.ext === 'pdf' ? path : null;
   return path;
+}
+/* PDF de um documento: usa o já gerado, o próprio arquivo (se for PDF) ou gera agora a partir da foto */
+async function pdfDoDocumento(d){
+  const baixar = async path => { const { data, error } = await sb.storage.from('documentos').download(path); if(error) throw error; return data; };
+  if(d.pdf_path) return baixar(d.pdf_path);
+  if(/\.pdf$/i.test(d.arquivo_path)) return baixar(d.arquivo_path);
+  const foto = await baixar(d.arquivo_path);
+  const arq = await prepararArquivo(new File([foto], 'foto.jpg', { type: foto.type && foto.type.startsWith('image/') ? foto.type : 'image/jpeg' }));
+  if(staff()){ // guarda o PDF gerado para as próximas vezes
+    const pdf = d.arquivo_path.replace(/\.[^./]+$/, '') + '.pdf';
+    const up = await sb.storage.from('documentos').upload(pdf, arq.pdf, { contentType: 'application/pdf', upsert: false });
+    if(!up.error || /exist|duplicate/i.test(up.error.message || '')){ const r = await sb.from('documentos').update({ pdf_path: pdf }).eq('id', d.id); if(!r.error) d.pdf_path = pdf; }
+  }
+  return arq.pdf;
+}
+const nomeArq = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'documento';
+async function baixarPdfDoc(id, btn){
+  const d = S.pessoa.docs.find(x => x.id === id); if(!d) return;
+  const solta = travar(btn, 'Gerando...');
+  try { const b = await pdfDoDocumento(d); baixarArquivo(nomeArq(S.pessoa.p.nome) + '_' + nomeArq(d.tipo) + '.pdf', b, 'application/pdf'); }
+  catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); } finally { solta(); }
+}
+/* ZIP simples (sem compressão) — junta vários PDFs num arquivo só */
+const CRC = (() => { const t = new Uint32Array(256); for(let n = 0; n < 256; n++){ let c = n; for(let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b){ let c = 0xFFFFFFFF; for(let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function montarZip(arquivos){
+  const te = new TextEncoder(), partes = [], central = []; let off = 0;
+  const dt = new Date(), hora = (dt.getHours() << 11) | (dt.getMinutes() << 5) | (dt.getSeconds() >> 1), dia = ((dt.getFullYear() - 1980) << 9) | ((dt.getMonth() + 1) << 5) | dt.getDate();
+  for(const a of arquivos){
+    const nome = te.encode(a.nome), dados = new Uint8Array(await a.blob.arrayBuffer()), crc = crc32(dados);
+    const lh = new DataView(new ArrayBuffer(30));
+    [[0,0x04034b50,4],[4,20,2],[6,0x0800,2],[8,0,2],[10,hora,2],[12,dia,2],[14,crc,4],[18,dados.length,4],[22,dados.length,4],[26,nome.length,2],[28,0,2]].forEach(([p, v, n]) => n === 4 ? lh.setUint32(p, v, true) : lh.setUint16(p, v, true));
+    const ch = new DataView(new ArrayBuffer(46));
+    [[0,0x02014b50,4],[4,20,2],[6,20,2],[8,0x0800,2],[10,0,2],[12,hora,2],[14,dia,2],[16,crc,4],[20,dados.length,4],[24,dados.length,4],[28,nome.length,2],[30,0,2],[32,0,2],[34,0,2],[36,0,2],[38,0,4],[42,off,4]].forEach(([p, v, n]) => n === 4 ? ch.setUint32(p, v, true) : ch.setUint16(p, v, true));
+    partes.push(new Uint8Array(lh.buffer), nome, dados); central.push(new Uint8Array(ch.buffer), nome);
+    off += 30 + nome.length + dados.length;
+  }
+  const tamC = central.reduce((s, b) => s + b.length, 0), fim = new DataView(new ArrayBuffer(22));
+  fim.setUint32(0, 0x06054b50, true); fim.setUint16(8, arquivos.length, true); fim.setUint16(10, arquivos.length, true); fim.setUint32(12, tamC, true); fim.setUint32(16, off, true);
+  return new Blob(partes.concat(central, [new Uint8Array(fim.buffer)]), { type: 'application/zip' });
+}
+/* documentos válidos de cada pessoa (o mais recente de cada tipo, sem os recusados) */
+function docsParaGesp(docs){ const vistos = new Set(); return docs.filter(d => d.status !== 'recusado' && !vistos.has(d.tipo) && vistos.add(d.tipo)); }
+async function zipPdfs(itens, nomeZip, btn){
+  if(!itens.length) return toast('Nenhum documento para baixar.', 'erro');
+  const solta = travar(btn, 'Gerando 0/' + itens.length + '...'), arquivos = [], falhas = [];
+  try {
+    for(let i = 0; i < itens.length; i++){
+      if(btn) btn.textContent = 'Gerando ' + (i + 1) + '/' + itens.length + '...';
+      try { arquivos.push({ nome: itens[i].nome, blob: await pdfDoDocumento(itens[i].d) }); } catch(e){ falhas.push(itens[i].nome); }
+    }
+    if(!arquivos.length) return toast('Não foi possível gerar os PDFs.', 'erro');
+    baixarArquivo(nomeZip, await montarZip(arquivos), 'application/zip');
+    toast(arquivos.length + ' PDF(s) baixado(s)' + (falhas.length ? '. Falharam: ' + falhas.join(', ') : '.'), falhas.length ? 'erro' : '');
+  } finally { solta(); }
+}
+function pdfsPessoa(btn){
+  const p = S.pessoa.p, pasta = nomeArq(p.nome) + (p.cpf ? '_' + soDig(p.cpf) : '');
+  zipPdfs(docsParaGesp(S.pessoa.docs).map(d => ({ d, nome: pasta + '/' + nomeArq(d.tipo) + '.pdf' })), pasta + '_PDFs_GESP.zip', btn);
+}
+async function pdfsTurma(btn){
+  const { t, mats } = S.turma, ids = mats.map(m => m.pessoa_id);
+  if(!ids.length) return toast('A turma não tem alunos.', 'erro');
+  const docs = await q(sb.from('documentos').select('*').in('pessoa_id', ids).order('enviado_em', { ascending: false }));
+  const itens = [];
+  mats.forEach(m => { const pe = m.pessoas || {}, pasta = nomeArq(pe.nome) + (pe.cpf ? '_' + soDig(pe.cpf) : ''); docsParaGesp(docs.filter(d => d.pessoa_id === m.pessoa_id)).forEach(d => itens.push({ d, nome: pasta + '/' + nomeArq(d.tipo) + '.pdf' })); });
+  zipPdfs(itens, 'Turma_' + nomeArq(t.codigo) + '_PDFs_GESP.zip', btn);
 }
 async function verArquivo(path, docId){
   const { data, error } = await sb.storage.from('documentos').createSignedUrl(path, 600);
@@ -404,7 +491,7 @@ async function verArquivo(path, docId){
   const d = docId && S.pessoa ? S.pessoa.docs.find(x => x.id === docId) : null;
   let corpo = '<div class="visor">' + (pdf ? '<iframe src="'+esc(url)+'" title="Documento"></iframe>' : '<img src="'+esc(url)+'" alt="Documento enviado">') + '</div>';
   if(d) corpo += '<div class="small muted" style="margin-top:8px">'+(S.pessoa.p ? esc(S.pessoa.p.nome)+' · ' : '')+'Enviado em '+fmt(d.enviado_em)+(d.validade ? ' · validade '+fmt(d.validade) : '')+' · '+DOCST[estadoDoc(d)][0]+'</div>';
-  let botoes = '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>';
+  let botoes = '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>' + (d && staff() ? '<button class="btn nv" onclick="baixarPdfDoc(\''+d.id+'\',this)">⬇ PDF (GESP)</button>' : '');
   if(d && staff()){
     const outros = S.pessoa.docs.filter(x => x.status === 'enviado' && x.id !== d.id).length;
     botoes = (d.status !== 'recusado' ? '<button class="btn dg" onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '') +
@@ -469,11 +556,12 @@ async function vPessoa(id){
   h += '</div>';
   // documentos
   const emAnalise = docs.filter(d => d.status === 'enviado').length;
-  h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span>'+(staff() && emAnalise ? '<button class="btn ok sm" onclick="aprovarTodos()">Aprovar todos em análise ('+emAnalise+')</button>' : '')+'<button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span>'+(staff() && emAnalise ? '<button class="btn ok sm" onclick="aprovarTodos()">Aprovar todos em análise ('+emAnalise+')</button>' : '')+(staff() && docs.length ? '<button class="btn nv sm" onclick="pdfsPessoa(this)">⬇ PDFs para o GESP</button>' : '')+'<button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
   h += docs.length ? '<div class="tw"><table><tr><th>Documento</th><th>Enviado</th><th>Validade</th><th>Situação</th><th></th></tr>'+docs.map(d => {
     const st = estadoDoc(d);
     return '<tr><td>'+esc(d.tipo)+'</td><td>'+fmt(d.enviado_em)+'</td><td>'+(d.validade ? fmt(d.validade) : '—')+'</td><td>'+bdg(DOCST[st])+(d.motivo && d.status === 'recusado' ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
       '<td class="acoes"><button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\',\''+d.id+'\')">Ver</button>'+
+      (staff() ? ' <button class="btn nv sm" onclick="baixarPdfDoc(\''+d.id+'\',this)" title="Baixar em PDF para o GESP">PDF</button>' : '')+
       (staff() ? ' <button class="btn ok sm" '+(d.status === 'aprovado' ? 'disabled' : '')+' onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" '+(d.status === 'recusado' ? 'disabled' : '')+' onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum documento enviado.</p>';
   h += '</div>';
@@ -566,7 +654,7 @@ async function enviarDocumento(btn){
   try {
     const p = S.pessoa.p;
     const path = await subirArquivo(p, f);
-    await q(sb.from('documentos').insert({ pessoa_id: p.id, escola_id: p.escola_id, tipo, arquivo_path: path, nome_arquivo: f.name, validade }));
+    await q(sb.from('documentos').insert({ pessoa_id: p.id, escola_id: p.escola_id, tipo, arquivo_path: path, pdf_path: S.ultimoPdf || null, nome_arquivo: f.name, validade }));
     fecharModal(); toast('Documento enviado.'); recarregar();
   } catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); } finally { solta(); }
 }
@@ -642,7 +730,7 @@ async function conferirCert(id){ await q(sb.from('certificacoes').update({ verif
 async function excluirCert(id){ if(!confirm('Excluir este registro de curso?')) return; await q(sb.from('certificacoes').delete().eq('id', id)); recarregar(); }
 async function excluirPessoa(id){
   if(!confirm('Excluir esta pessoa e todos os seus documentos e registros? Essa ação não pode ser desfeita.')) return;
-  const docs = S.pessoa.docs.map(d => d.arquivo_path).concat(S.pessoa.certs.map(c => c.certificado_path).filter(Boolean));
+  const docs = S.pessoa.docs.map(d => d.arquivo_path).concat(S.pessoa.docs.map(d => d.pdf_path).filter(Boolean), S.pessoa.certs.map(c => c.certificado_path).filter(Boolean));
   if(docs.length) await sb.storage.from('documentos').remove(docs);
   await q(sb.from('pessoas').delete().eq('id', id)); toast('Excluído.'); S.hist.length ? voltar() : go('pessoas', null, false);
 }
@@ -962,7 +1050,7 @@ async function executarLimpeza(btn){
   if(!confirm('Apagar definitivamente '+l.length+' arquivo(s)? Esta ação não pode ser desfeita.')) return;
   const solta = travar(btn, 'Apagando...');
   try {
-    const paths = l.map(x => x.arquivo_path).filter(Boolean);
+    const paths = l.map(x => x.arquivo_path).concat(l.map(x => x.pdf_path)).filter(Boolean);
     for(let i = 0; i < paths.length; i += 100) await q(sb.storage.from('documentos').remove(paths.slice(i, i + 100)));
     const ids = l.map(x => x.id);
     for(let i = 0; i < ids.length; i += 100) await q(sb.from('documentos').delete().in('id', ids.slice(i, i + 100)));
@@ -1122,7 +1210,7 @@ async function vTurma(id){
   const fechada = t.status === 'concluida' || t.status === 'cancelada';
   const emp = id => id && S.empresas[id] ? S.empresas[id].nome : 'Particular';
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(t.codigo)+' '+bdg(TST[t.status])+'</h2><span class="sp"></span>'+
-    '<button class="btn sec sm" onclick="modalTurma(\''+t.id+'\')">Editar</button><button class="btn nv sm" onclick="exportarTurma()">Planilha para o GESP</button><button class="btn nv sm" onclick="listaPresenca()">Lista de presença</button>'+
+    '<button class="btn sec sm" onclick="modalTurma(\''+t.id+'\')">Editar</button><button class="btn nv sm" onclick="exportarTurma()">Planilha para o GESP</button><button class="btn nv sm" onclick="pdfsTurma(this)">⬇ Documentos em PDF</button><button class="btn nv sm" onclick="listaPresenca()">Lista de presença</button>'+
     (fechada ? '' : '<button class="btn ok sm" onclick="concluirTurma(\''+t.id+'\',this)">Concluir turma</button>')+'</div>';
   h += '<div class="card"><div class="kpis" style="margin:0">'+
     '<div class="kpi" style="cursor:default"><span>Curso</span><b style="font-size:18px">'+esc(t.cursos ? t.cursos.sigla : '')+'</b><span>'+esc(t.cursos ? t.cursos.nome : '')+'</span></div>'+
