@@ -39,6 +39,10 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--bd);vertical-align:middle}
 th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
 .acoes .btn{margin:2px 0}
+.mbox.grande{max-width:960px}
+.visor{background:#eef1f6;border-radius:8px;overflow:auto;max-height:70vh;text-align:center}
+.visor img{max-width:100%;height:auto;display:block;margin:0 auto}
+.visor iframe{width:100%;height:68vh;border:0;display:block}
 tr.click{cursor:pointer}tr.click:hover{background:#f7f9fc}
 .bdg{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600;background:#e8ebf2;color:var(--mut);white-space:nowrap}
 .bdg.ok{background:#e1f4ea;color:var(--ok)}.bdg.warn{background:#fff1d6;color:var(--warn)}.bdg.bad{background:#fde4e4;color:var(--bad)}.bdg.nv{background:#e3e8f5;color:var(--navy2)}
@@ -83,7 +87,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.0.0';
+const VERSAO = '1.1.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -195,7 +199,7 @@ function telaAuth(aba){
   const abas = aba === 'nova' ? '' : '<div class="tabs"><button class="'+(aba==='entrar'?'on':'')+'" onclick="telaAuth(\'entrar\')">Entrar</button><button class="'+(aba==='cadastro'?'on':'')+'" onclick="telaAuth(\'cadastro\')">Criar conta</button></div>';
   let corpo = '';
   if(aba === 'entrar') corpo =
-    '<label class="f"><span>E-mail</span><input id="aEmail" type="email" autocomplete="email"></label>'+
+    '<label class="f"><span>E-mail ou CPF/CNPJ</span><input id="aEmail" autocomplete="username"></label>'+
     '<label class="f"><span>Senha</span><input id="aSenha" type="password" autocomplete="current-password" onkeydown="if(event.key===\'Enter\')fazerLogin(this)"></label>'+
     '<button class="btn" style="width:100%" onclick="fazerLogin(this)">Entrar</button>'+
     '<p style="text-align:center;margin:14px 0 0"><a href="#" onclick="telaAuth(\'esqueci\');return false">Esqueci minha senha</a></p>';
@@ -237,9 +241,16 @@ function tipoCad(t){
   $('#txtLgpd').innerHTML = textoLgpd(t);
 }
 async function fazerLogin(btn){
-  const email = $('#aEmail').value.trim(), senha = $('#aSenha').value;
-  if(!email || !senha) return toast('Informe e-mail e senha.', 'erro');
+  let email = $('#aEmail').value.trim(); const senha = $('#aSenha').value;
+  if(!email || !senha) return toast('Informe e-mail (ou CPF/CNPJ) e senha.', 'erro');
   const solta = travar(btn, 'Entrando...');
+  if(!email.includes('@')){
+    const doc = soDig(email);
+    if(doc.length !== 11 && doc.length !== 14){ solta(); return toast('Informe um e-mail ou um CPF/CNPJ válido.', 'erro'); }
+    const r = await sb.rpc('email_para_login', { doc, senha });
+    if(r.error || !r.data){ solta(); return toast('CPF/CNPJ ou senha incorretos.', 'erro'); }
+    email = r.data;
+  }
   const { error } = await sb.auth.signInWithPassword({ email, password: senha });
   solta();
   if(error) toast(traduzErro(error), 'erro');
@@ -288,7 +299,7 @@ async function salvarNovaSenha(btn){
 
 /* ================= NAVEGAÇÃO ================= */
 function menu(){
-  if(staff()) return [['painel','Painel'],['analise','Análise'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']];
+  if(staff()) return [['painel','Painel'],['analise','Análise'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : []);
   if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
   return [['pessoa','Meu cadastro']];
 }
@@ -348,11 +359,38 @@ async function subirArquivo(pessoa, file){
   await q(sb.storage.from('documentos').upload(path, arq.blob, { contentType: arq.tipo, upsert: false }));
   return path;
 }
-async function verArquivo(path){
-  const w = window.open('', '_blank');
-  const { data, error } = await sb.storage.from('documentos').createSignedUrl(path, 300);
-  if(error){ if(w) w.close(); return toast(traduzErro(error), 'erro'); }
-  if(w) w.location = data.signedUrl; else window.location = data.signedUrl;
+async function verArquivo(path, docId){
+  const { data, error } = await sb.storage.from('documentos').createSignedUrl(path, 600);
+  if(error) return toast(traduzErro(error), 'erro');
+  const url = data.signedUrl, pdf = /\.pdf$/i.test(path);
+  const d = docId && S.pessoa ? S.pessoa.docs.find(x => x.id === docId) : null;
+  let corpo = '<div class="visor">' + (pdf ? '<iframe src="'+esc(url)+'" title="Documento"></iframe>' : '<img src="'+esc(url)+'" alt="Documento enviado">') + '</div>';
+  if(d) corpo += '<div class="small muted" style="margin-top:8px">'+(S.pessoa.p ? esc(S.pessoa.p.nome)+' · ' : '')+'Enviado em '+fmt(d.enviado_em)+(d.validade ? ' · validade '+fmt(d.validade) : '')+' · '+DOCST[estadoDoc(d)][0]+'</div>';
+  let botoes = '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>';
+  if(d && staff()){
+    const outros = S.pessoa.docs.filter(x => x.status === 'enviado' && x.id !== d.id).length;
+    botoes = (d.status !== 'recusado' ? '<button class="btn dg" onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '') +
+      (d.status !== 'aprovado' ? '<button class="btn ok" onclick="aprovarNoVisor(\''+d.id+'\',this)">'+(outros ? 'Aprovar e próximo ('+outros+')' : 'Aprovar')+'</button>' : '') + botoes;
+  }
+  abrirModal(d ? d.tipo : 'Documento', corpo, botoes);
+  $('.mbox').classList.add('grande');
+}
+async function aprovarNoVisor(id, btn){
+  const solta = travar(btn);
+  try {
+    await q(sb.from('documentos').update({ status: 'aprovado', motivo: null }).eq('id', id));
+    const d = S.pessoa.docs.find(x => x.id === id); if(d){ d.status = 'aprovado'; d.motivo = null; }
+    S._recarregarAoFechar = true;
+    const prox = S.pessoa.docs.find(x => x.status === 'enviado');
+    if(prox){ toast('Aprovado. Próximo documento.'); verArquivo(prox.arquivo_path, prox.id); }
+    else { toast('Todos os documentos foram analisados.'); fecharModal(); }
+  } finally { solta(); }
+}
+async function aprovarTodos(){
+  const ids = S.pessoa.docs.filter(d => d.status === 'enviado').map(d => d.id);
+  if(!ids.length || !confirm('Aprovar '+ids.length+' documento(s) em análise? Confirme que você já conferiu todos.')) return;
+  await q(sb.from('documentos').update({ status: 'aprovado', motivo: null }).in('id', ids));
+  toast('Documentos aprovados.'); recarregar();
 }
 
 /* ================= TELA: PESSOA (cadastro, pré-matrículas, documentos, cursos) ================= */
@@ -391,11 +429,12 @@ async function vPessoa(id){
   }).join('')+'</table></div>' : '<p class="muted">Nenhum curso registrado. '+(staff() ? '' : 'Se você já fez formação ou atualização, informe aqui para receber o aviso de vencimento.')+'</p>';
   h += '</div>';
   // documentos
-  h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span><button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
+  const emAnalise = docs.filter(d => d.status === 'enviado').length;
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span>'+(staff() && emAnalise ? '<button class="btn ok sm" onclick="aprovarTodos()">Aprovar todos em análise ('+emAnalise+')</button>' : '')+'<button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
   h += docs.length ? '<div class="tw"><table><tr><th>Documento</th><th>Enviado</th><th>Validade</th><th>Situação</th><th></th></tr>'+docs.map(d => {
     const st = estadoDoc(d);
     return '<tr><td>'+esc(d.tipo)+'</td><td>'+fmt(d.enviado_em)+'</td><td>'+(d.validade ? fmt(d.validade) : '—')+'</td><td>'+bdg(DOCST[st])+(d.motivo && d.status === 'recusado' ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
-      '<td class="acoes"><button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\')">Ver</button>'+
+      '<td class="acoes"><button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\',\''+d.id+'\')">Ver</button>'+
       (staff() ? ' <button class="btn ok sm" '+(d.status === 'aprovado' ? 'disabled' : '')+' onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" '+(d.status === 'recusado' ? 'disabled' : '')+' onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum documento enviado.</p>';
   h += '</div>';
@@ -429,7 +468,7 @@ function cardSolicitacao(s){
       const d = docAtual(x.nome), st = estadoDoc(d);
       const podeEnviar = st !== 'aprovado' && (staff() || ['rascunho','pendente','enviada'].includes(s.status));
       return '<tr><td>'+esc(x.nome)+(x.opcional ? ' <span class="muted small">(se aplicável)</span>' : '')+'</td><td>'+bdg(DOCST[st])+(d && d.status === 'recusado' && d.motivo ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
-        '<td class="acoes">'+(d ? '<button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\')">Ver</button> ' : '')+
+        '<td class="acoes">'+(d ? '<button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\',\''+d.id+'\')">Ver</button> ' : '')+
         (podeEnviar ? '<button class="btn sm" onclick="modalEnvio(\''+esc(x.nome).replace(/&#39;/g, "\\'")+'\')">'+(d ? 'Reenviar' : 'Enviar')+'</button>' : '')+
         (staff() && d && d.status === 'enviado' ? ' <button class="btn ok sm" onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
     }).join('')+'</table></div>';
@@ -468,17 +507,20 @@ async function criarSolicitacao(btn){
   const solta = travar(btn);
   try { await q(sb.from('solicitacoes').insert({ pessoa_id: S.pessoa.p.id, escola_id: S.pessoa.p.escola_id, curso_id, obs, status: 'rascunho' })); fecharModal(); toast('Pré-matrícula criada. Agora envie os documentos.'); recarregar(); } finally { solta(); }
 }
+function escolherArq(inp){ S.arqEnvio = inp.files[0] || null; const n = $('#enNome'); if(n) n.textContent = S.arqEnvio ? 'Selecionado: ' + S.arqEnvio.name : ''; }
 function modalEnvio(tipo){
+  S.arqEnvio = null;
   const tipos = todosTiposDoc();
   abrirModal('Enviar documento',
     '<label class="f"><span>Documento</span><select id="enTipo">'+tipos.map(t => '<option'+(t === tipo ? ' selected' : '')+'>'+esc(t)+'</option>').join('')+'</select></label>'+
-    '<label class="f"><span>Arquivo (foto ou PDF, até 10 MB)</span><input id="enArq" type="file" accept="image/*,application/pdf"></label>'+
+    '<div class="f" style="margin-bottom:10px"><span class="small muted">Arquivo (foto ou PDF, até 10 MB)</span><div class="bar" style="margin:4px 0 4px"><button type="button" class="btn nv" onclick="document.getElementById(\'enCam\').click()">📷 Tirar foto</button><button type="button" class="btn sec" onclick="document.getElementById(\'enArq\').click()">Escolher arquivo</button></div><div id="enNome" class="small" style="color:var(--ok)"></div>'+
+    '<input id="enCam" type="file" accept="image/*" capture="environment" style="display:none" onchange="escolherArq(this)"><input id="enArq" type="file" accept="image/*,application/pdf" style="display:none" onchange="escolherArq(this)"></div>'+
     '<label class="f"><span>Validade do documento (se houver)</span><input id="enVal" type="date"></label>'+
     '<p class="small muted">Dica: fotografe o documento inteiro, em local claro, sem cortes e sem reflexo.</p>',
     '<button class="btn" onclick="enviarDocumento(this)">Enviar</button>');
 }
 async function enviarDocumento(btn){
-  const f = $('#enArq').files[0], tipo = $('#enTipo').value, validade = $('#enVal').value || null;
+  const f = S.arqEnvio, tipo = $('#enTipo').value, validade = $('#enVal').value || null;
   if(!f) return toast('Escolha o arquivo.', 'erro');
   const solta = travar(btn, 'Enviando...');
   try {
@@ -772,7 +814,34 @@ async function salvarConta(btn){
   try { S.perfil = await q(sb.from('perfis').update({ nome: $('#ctNome').value.trim(), cpf_cnpj: doc, telefone: $('#ctTel').value.trim() }).eq('id', S.perfil.id).select().single()); toast('Dados salvos.'); } finally { solta(); }
 }
 
-const VIEWS = { pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const FUNCAO = { admin: 'Administrador', staff: 'Equipe da escola', aluno: 'Aluno', empresa: 'Empresa' };
+async function vEquipe(){
+  if(S.perfil.tipo !== 'admin') return '<div class="card">Somente o administrador acessa esta tela.</div>';
+  const lista = await q(sb.from('perfis').select('id,nome,email,tipo').eq('escola_id', S.perfil.escola_id).in('tipo', ['staff','admin']).order('nome'));
+  return '<h2>Equipe da escola</h2><div class="card"><div class="tw"><table><tr><th>Nome</th><th>E-mail</th><th>Função</th><th></th></tr>'+lista.map(u => '<tr><td><b>'+esc(u.nome || '—')+'</b>'+(u.id === S.perfil.id ? ' <span class="bdg nv">você</span>' : '')+'</td><td>'+esc(u.email)+'</td><td>'+esc(FUNCAO[u.tipo])+'</td><td class="acoes">'+(u.id === S.perfil.id ? '' :
+    (u.tipo === 'staff' ? '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\'admin\')">Tornar administrador</button> ' : '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\'staff\')">Tornar equipe</button> ')+
+    '<button class="btn dg sm" onclick="definirFuncao(\''+u.id+'\',\'aluno\')">Remover acesso</button>')+'</td></tr>').join('')+'</table></div>'+
+    '<p class="small muted"><b>Administrador</b> faz tudo, inclusive gerenciar a equipe. <b>Equipe da escola</b> analisa documentos, pré-matrículas, cursos e vencimentos.</p></div>'+
+    '<div class="card"><h3>Adicionar pessoa à equipe</h3><p class="small muted" style="margin-top:0">1. Peça para a pessoa criar uma conta pelo link do portal (Painel → Link do portal).<br>2. Busque pelo e-mail que ela usou e defina a função.</p>'+
+    '<div class="bar"><input id="eqEmail" type="email" placeholder="e-mail da pessoa" style="flex:1" onkeydown="if(event.key===\'Enter\')buscarEquipe()"><button class="btn nv" onclick="buscarEquipe()">Buscar</button></div><div id="eqRes"></div></div>';
+}
+async function buscarEquipe(){
+  const e = $('#eqEmail').value.trim().toLowerCase().replace(/[,()%]/g, '');
+  if(!e) return;
+  const r = await q(sb.from('perfis').select('id,nome,email,tipo').eq('escola_id', S.perfil.escola_id).ilike('email', e).limit(5));
+  $('#eqRes').innerHTML = r.length ? r.map(u => '<div class="aviso" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div style="flex:1"><b>'+esc(u.nome || '—')+'</b> · '+esc(u.email)+' · hoje: '+esc(FUNCAO[u.tipo])+'</div>'+(u.id === S.perfil.id ? '' :
+    (u.tipo !== 'staff' ? '<button class="btn sm" onclick="definirFuncao(\''+u.id+'\',\'staff\')">Tornar equipe</button>' : '')+(u.tipo !== 'admin' ? '<button class="btn nv sm" onclick="definirFuncao(\''+u.id+'\',\'admin\')">Tornar administrador</button>' : ''))+'</div>').join('')
+    : '<div class="aviso bad">Nenhuma conta com esse e-mail nesta escola. Confira o e-mail ou peça para a pessoa criar a conta pelo link do portal.</div>';
+}
+async function definirFuncao(id, tipo){
+  if(id === S.perfil.id) return toast('Você não pode alterar a sua própria função.', 'erro');
+  const msg = { admin: 'Dar acesso de ADMINISTRADOR a esta pessoa?', staff: 'Dar acesso de EQUIPE DA ESCOLA a esta pessoa?', aluno: 'Remover o acesso desta pessoa ao painel da escola? A conta continua existindo como aluno.' }[tipo];
+  if(!confirm(msg)) return;
+  await q(sb.from('perfis').update({ tipo }).eq('id', id));
+  toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
+}
+
+const VIEWS = { equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
