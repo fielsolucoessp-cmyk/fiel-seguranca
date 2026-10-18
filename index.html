@@ -122,7 +122,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.13.1';
+const VERSAO = '1.14.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -254,7 +254,7 @@ async function entrar(sessao){
     if(staff()) go('painel', null, false);
     else if(perfil.tipo === 'empresa') go('vigilantes', null, false);
     else if(perfil.tipo === 'instrutor') go('aulas', null, false);
-    else go('pessoa', S.minhaPessoa, false);
+    else go('inicio', null, false);
   } catch(e){ console.error(e); }
 }
 async function carregarCursos(){ S.cursos = await q(sb.from('cursos').select('*').eq('escola_id', S.perfil.escola_id).order('sigla')); }
@@ -374,7 +374,8 @@ function menu(){
   if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : [], dono);
   if(S.dono) return dono;
   if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
-  return [['pessoa','Meu cadastro']];
+  const bg = S.badges || {}, n = k => bg[k] ? ' ('+bg[k]+')' : '';
+  return [['inicio','Início'],['pre','Pré-matrículas'+n('pre')],['docs','Documentos'+n('docs')],['meuscursos','Cursos concluídos'],['dados','Meus dados']];
 }
 function moldura(){
   if($('#main')) return;
@@ -390,7 +391,7 @@ async function go(view, param, empilhar = true){
   S.view = view; S.param = param;
   moldura(); desenharMenu();
   $('#main').innerHTML = '<p class="muted">Carregando...</p>';
-  try { $('#main').innerHTML = await VIEWS[view](param); }
+  try { $('#main').innerHTML = await VIEWS[view](param); desenharMenu(); }
   catch(e){ console.error(e); if(!e._mostrado) registrarErro('Tela ' + view + ': ' + (e.message || e), e.stack); $('#main').innerHTML = '<div class="card"><p>Não foi possível carregar esta tela.</p><p class="muted small">'+esc(traduzErro(e))+'</p><button class="btn" onclick="recarregar()">Tentar de novo</button></div>'; }
   window.scrollTo(0, 0);
 }
@@ -564,7 +565,7 @@ function docAtual(tipo){ return (S.pessoa.docs || []).find(d => d.tipo === tipo)
 function estadoDoc(d){ if(!d) return 'falta'; if(d.status === 'recusado') return 'recusado'; if(d.validade && dias(d.validade) < 0) return 'vencido'; return d.status; }
 function faltando(sol){ return parseDocs(sol.cursos).filter(x => !x.opcional && ['falta','recusado','vencido'].includes(estadoDoc(docAtual(x.nome)))); }
 
-async function vPessoa(id){
+async function vPessoa(id, aba){
   if(!id) return '<div class="card">Cadastro não encontrado. Fale com a escola.</div>';
   const [p, docs, sols, certs] = await Promise.all([
     q(sb.from('pessoas').select('*').eq('id', id).single()),
@@ -576,18 +577,39 @@ async function vPessoa(id){
   for(const s of sols.filter(s => s.status === 'aprovada' && !s.turma_id)){ const r = await sb.rpc('posicao_fila', { p_solicitacao: s.id }); s._fila = r.error ? null : r.data; }
   if(!staff()) for(const s of sols.filter(s => s.status === 'matriculada' && s.turma_id)){ const r = await sb.rpc('meu_andamento', { p_solicitacao: s.id }); s._and = r.error ? null : r.data; }
   const souAluno = S.perfil.tipo === 'aluno';
+  if(staff()) aba = 'tudo';
+  else if(!souAluno){ if(S._abaPid !== id){ S._abaPid = id; S.abaP = 'inicio'; } aba = S.abaP || 'inicio'; }
+  else aba = aba || 'inicio';
+  const recusados = docs.filter(d => d.status === 'recusado' && !docs.some(o => o.id !== d.id && o.tipo === d.tipo && o.enviado_em > d.enviado_em && o.status !== 'recusado')).length;
+  const pendentes = sols.filter(s => s.status === 'pendente').length;
+  if(souAluno){ const nb = { docs: recusados, pre: pendentes }; if(JSON.stringify(nb) !== JSON.stringify(S.badges || {})){ S.badges = nb; setTimeout(desenharMenu, 0); } }
+  const ABAS = [['inicio','Início'],['pre','Pré-matrículas'+(pendentes ? ' ('+pendentes+')' : '')],['docs','Documentos'+(recusados ? ' ('+recusados+')' : '')],['meuscursos','Cursos concluídos'],['dados',souAluno ? 'Meus dados' : 'Dados pessoais']];
+  const ver = k => aba === 'tudo' || aba === k;
   const ativas = sols.filter(s => !['cancelada','recusada','concluida','reprovado'].includes(s.status));
-  let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? 'Meu cadastro' : p.nome)+'</h2><span class="sp"></span>';
+  let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? (ABAS.find(x => x[0] === aba) || ['', 'Meu cadastro'])[1].replace(/ \(\d+\)$/, '') : p.nome)+'</h2><span class="sp"></span>';
   if(staff()) h += botoesContato(p, 'Escola — ' + p.nome, 'Olá, ' + p.nome.split(' ')[0] + '!' + assinatura()) + ' <button class="btn dg sm" onclick="excluirPessoa(\''+p.id+'\')">Excluir</button>';
-  else h += '<button class="btn sec sm" onclick="baixarMeusDados()" title="Cópia dos seus dados (LGPD)">⬇ Baixar meus dados</button>';
+  else if(aba === 'dados') h += '<button class="btn sec sm" onclick="baixarMeusDados()" title="Cópia dos seus dados (LGPD)">⬇ Baixar meus dados</button>';
   h += '</div>';
-  if(!staff() && !sols.length) h += '<div class="passos"><div><b>Passo 1</b>Confira e complete seus dados</div><div><b>Passo 2</b>Crie a pré-matrícula no curso desejado</div><div><b>Passo 3</b>Envie os documentos pedidos</div><div><b>Passo 4</b>Clique em "Enviar para análise"</div></div>';
+  if(!staff() && !souAluno) h += '<div class="tabs">'+ABAS.map(([k, l]) => '<button class="'+(aba === k ? 'on' : '')+'" onclick="abaPessoa(\''+k+'\')">'+l+'</button>').join('')+'</div>';
+  if(aba === 'inicio'){
+    const avisos = [];
+    if(recusados) avisos.push('<div class="aviso bad"><b>'+recusados+' documento(s) recusado(s).</b> Envie uma nova via. <button class="btn sm" onclick="abaPessoa(\'docs\')">Ver documentos</button></div>');
+    if(pendentes) avisos.push('<div class="aviso bad"><b>Pré-matrícula com pendência.</b> Veja o que a escola pediu. <button class="btn sm" onclick="abaPessoa(\'pre\')">Ver pré-matrículas</button></div>');
+    sols.filter(s => s.status === 'enviada' && !s.pago).forEach(s => avisos.push('<div class="aviso"><b>'+esc(s.cursos ? s.cursos.sigla : '')+':</b> aguardando a confirmação do pagamento pela escola para seguir para a aprovação.</div>'));
+    sols.filter(s => s.status === 'rascunho').forEach(s => avisos.push('<div class="aviso"><b>'+esc(s.cursos ? s.cursos.sigla : '')+':</b> envie os documentos e clique em "Enviar para análise". <button class="btn sm" onclick="abaPessoa(\'pre\')">Continuar</button></div>'));
+    h += avisos.join('');
+  }
+  if(aba === 'inicio' && !sols.length) h += '<div class="passos"><div><b>Passo 1</b>Confira e complete seus dados</div><div><b>Passo 2</b>Crie a pré-matrícula no curso desejado</div><div><b>Passo 3</b>Envie os documentos pedidos</div><div><b>Passo 4</b>Clique em "Enviar para análise"</div></div>';
   if(staff() && p.empresa_id && S.empresas[p.empresa_id]) h += '<div class="aviso">Cadastrado pela empresa <b>'+esc(S.empresas[p.empresa_id].nome)+'</b>.</div>';
-  if(!staff() && (sols.length || certs.length)) h += cardMeusCursos(sols, certs);
+  if(aba === 'inicio' && (sols.length || certs.length)) h += cardMeusCursos(sols, certs);
+  if(aba === 'inicio' && !sols.length && !certs.length) h += '<div class="card"><p>Para começar, crie sua pré-matrícula no curso desejado.</p><button class="btn" onclick="novaSolicitacao()">+ Nova pré-matrícula</button></div>';
+  if(ver('pre')){
   // pré-matrículas
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Pré-matrículas</h3><span class="sp"></span><button class="btn" onclick="novaSolicitacao()">+ Nova pré-matrícula</button></div>';
   h += sols.length ? sols.map(s => cardSolicitacao(s)).join('') : '<p class="muted">Nenhuma pré-matrícula ainda.</p>';
   h += '</div>';
+  }
+  if(ver('meuscursos')){
   // cursos e validades
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Cursos concluídos e validade</h3><span class="sp"></span>'+(staff() ? '<button class="btn nv sm" onclick="novaCertificacao(true)">Registrar conclusão</button>' : '<button class="btn sec sm" onclick="novaCertificacao(false)">Informar curso já feito</button>')+'</div>';
   h += certs.length ? '<div class="tw"><table><tr><th>Curso</th><th>Conclusão</th><th>Validade</th><th>Origem</th><th></th></tr>'+certs.map(c => {
@@ -598,6 +620,8 @@ async function vPessoa(id){
       (staff() ? (c.verificado ? '' : '<button class="btn ok sm" onclick="conferirCert(\''+c.id+'\')">Conferir</button> ')+'<button class="btn sec sm" onclick="excluirCert(\''+c.id+'\')">✕</button>' : '')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum curso registrado. '+(staff() ? '' : 'Se você já fez formação ou atualização, informe aqui para receber o aviso de vencimento.')+'</p>';
   h += '</div>';
+  }
+  if(ver('docs')){
   // documentos
   const emAnalise = docs.filter(d => d.status === 'enviado').length;
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span>'+(staff() && emAnalise ? '<button class="btn ok sm" onclick="aprovarTodos()">Aprovar todos em análise ('+emAnalise+')</button>' : '')+(staff() && docs.length ? '<button class="btn nv sm" onclick="pdfsPessoa(this)">⬇ PDFs para o GESP</button>' : '')+'<button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
@@ -609,6 +633,8 @@ async function vPessoa(id){
       (staff() ? ' <button class="btn ok sm" '+(d.status === 'aprovado' ? 'disabled' : '')+' onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" '+(d.status === 'recusado' ? 'disabled' : '')+' onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum documento enviado.</p>';
   h += '</div>';
+  }
+  if(ver('dados')){
   // dados pessoais
   const sel = (v, ops) => ops.map(o => '<option'+(o === (v || '') ? ' selected' : '')+'>'+o+'</option>').join('');
   h += '<div class="card"><h3>Dados pessoais</h3><div class="fgrid">'+
@@ -624,10 +650,12 @@ async function vPessoa(id){
     '<label class="f"><span>Nº da CNV (se já for vigilante)</span><input id="pCnv" value="'+esc(p.cnv)+'"></label>'+
     (staff() ? '<label class="f w"><span>Observações internas</span><textarea id="pObs" rows="2">'+esc(p.obs)+'</textarea></label>' : '')+
     '</div><button class="btn" onclick="salvarPessoa(this)">Salvar dados</button></div>';
+  }
   if(staff()){ h += '<div class="card" id="histCard"><h3>Histórico de ações</h3><p class="muted small">Carregando...</p></div>'; setTimeout(() => carregarHistorico(p.id), 0); }
   return h;
 }
 
+function abaPessoa(k){ if(S.perfil.tipo === 'aluno') irMenu(k); else { S.abaP = k; recarregar(); } }
 /* ---------- MEUS CURSOS (portal do aluno) ---------- */
 function cardMeusCursos(sols, certs){
   const hoje = hojeISO(), pre = sols.filter(s => ['rascunho','enviada','pendente','aprovada'].includes(s.status)), and = sols.filter(s => s.status === 'matriculada');
@@ -685,7 +713,9 @@ function cardSolicitacao(s){
   if(s._fila) h += '<div class="aviso ok" style="margin-top:8px"><b>Aprovado!</b> Você é o <b>'+s._fila+'º</b> da fila para a próxima turma deste curso. A escola vai avisar quando a turma for formada.</div>';
   if(s.turmas) h += '<div class="aviso ok" style="margin-top:8px"><b>Turma '+esc(s.turmas.codigo)+'</b> · '+fmt(s.turmas.inicio)+' a '+fmt(s.turmas.fim)+(s.turmas.turno ? ' · '+esc(s.turmas.turno) : '')+(s.turmas.local ? ' · '+esc(s.turmas.local) : '')+'</div>';
   if(s.obs_escola) h += '<div class="aviso '+(s.status === 'pendente' || s.status === 'recusada' ? 'bad' : 'ok')+'" style="margin-top:8px"><b>Retorno da escola:</b> '+esc(s.obs_escola)+'</div>';
-  if(s.status === 'enviada' && !staff()) h += '<div class="aviso" style="margin-top:8px">Recebemos sua pré-matrícula. A escola vai analisar os documentos e você verá o resultado aqui.</div>';
+  if(s.status === 'enviada' && !staff()) h += '<div class="aviso" style="margin-top:8px">Recebemos sua pré-matrícula. A escola vai analisar os documentos'+(s.pago ? '' : ' e confirmar o pagamento')+' e você verá o resultado aqui.</div>';
+  if(!['rascunho','cancelada','recusada'].includes(s.status)) h += '<div class="small" style="margin-top:8px">Pagamento: '+(s.pago ? '<span class="bdg ok">Confirmado'+(s.pago_em ? ' em '+fmt(s.pago_em) : '')+'</span>' : '<span class="bdg warn">Aguardando confirmação da escola</span>')+
+    (staff() ? (s.pago ? ' <button class="btn sec sm" onclick="marcarPago(\''+s.id+'\',false,this)">Desfazer</button>' : ' <button class="btn ok sm" onclick="marcarPago(\''+s.id+'\',true,this)">💲 Financeiro OK</button>') : '')+'</div>';
   if(!['cancelada','recusada','concluida','reprovado'].includes(s.status) && lista.length){
     h += '<div class="tw" style="margin-top:8px"><table><tr><th>Documento exigido</th><th>Situação</th><th></th></tr>'+lista.map(x => {
       const d = docAtual(x.nome), st = estadoDoc(d);
@@ -728,7 +758,7 @@ async function criarSolicitacao(btn){
   const curso_id = $('#nsCurso').value, obs = $('#nsObs').value.trim();
   if(S.pessoa.sols.some(s => s.curso_id === curso_id && ['rascunho','enviada','pendente','aprovada','matriculada'].includes(s.status))) return toast('Já existe uma pré-matrícula em andamento para este curso.', 'erro');
   const solta = travar(btn);
-  try { await q(sb.from('solicitacoes').insert({ pessoa_id: S.pessoa.p.id, escola_id: S.pessoa.p.escola_id, curso_id, obs, status: 'rascunho' })); fecharModal(); toast('Pré-matrícula criada. Agora envie os documentos.'); recarregar(); } finally { solta(); }
+  try { await q(sb.from('solicitacoes').insert({ pessoa_id: S.pessoa.p.id, escola_id: S.pessoa.p.escola_id, curso_id, obs, status: 'rascunho' })); fecharModal(); toast('Pré-matrícula criada. Agora envie os documentos.'); if(!staff() && S.view !== 'pre' && S.abaP !== 'pre') abaPessoa('pre'); else recarregar(); } finally { solta(); }
 }
 function escolherArq(inp){
   const novos = [...(inp.files || [])]; inp.value = '';
@@ -810,6 +840,7 @@ async function confirmarRecusa(id, btn){
 async function salvarSituacao(id, btn){
   const status = $('#st_' + id).value, obs_escola = $('#ob_' + id).value.trim() || null;
   const s = S.pessoa.sols.find(x => x.id === id);
+  if(['aprovada','matriculada'].includes(status) && !['aprovada','matriculada','concluida','reprovado'].includes(s.status) && !s.pago) return toast('Confirme o pagamento (botão "Financeiro OK") antes de aprovar a pré-matrícula.', 'erro');
   const solta = travar(btn);
   try {
     await q(sb.from('solicitacoes').update({ status, obs_escola }).eq('id', id));
@@ -1143,7 +1174,7 @@ async function blocoGraficos(){
 async function vAnalise(){
   const eid = S.perfil.escola_id;
   const [sols, docs, pend, aprov] = await Promise.all([
-    q(sb.from('solicitacoes').select('id,pessoa_id,enviada_em,status,pessoas(nome,cpf,empresa_id),cursos(sigla)').eq('escola_id', eid).eq('status', 'enviada').order('enviada_em')),
+    q(sb.from('solicitacoes').select('id,pessoa_id,enviada_em,status,pago,pessoas(nome,cpf,empresa_id),cursos(sigla)').eq('escola_id', eid).eq('status', 'enviada').order('enviada_em')),
     q(sb.from('documentos').select('pessoa_id,tipo,enviado_em,pessoas(nome)').eq('escola_id', eid).eq('status', 'enviado').order('enviado_em').limit(500)),
     q(sb.from('solicitacoes').select('id,pessoa_id,criado_em,obs_escola,pessoas(nome),cursos(sigla)').eq('escola_id', eid).eq('status', 'pendente').order('criado_em')),
     q(sb.from('solicitacoes').select('curso_id,cursos(sigla,nome)').eq('escola_id', eid).eq('status', 'aprovada').is('turma_id', null))
@@ -1151,7 +1182,7 @@ async function vAnalise(){
   const porPessoa = {}; docs.forEach(d => { (porPessoa[d.pessoa_id] = porPessoa[d.pessoa_id] || { nome: d.pessoas ? d.pessoas.nome : '', n: 0, desde: d.enviado_em }).n++; });
   const emp = id => id && S.empresas[id] ? S.empresas[id].nome : 'Particular';
   let h = '<h2>Análise</h2>';
-  h += '<div class="card"><h3>Pré-matrículas aguardando análise ('+sols.length+')</h3>'+(sols.length ? '<div class="tw"><table><tr><th>Nome</th><th>Curso</th><th>Empresa</th><th>Enviada em</th></tr>'+sols.map(s => '<tr class="click" onclick="go(\'pessoa\',\''+s.pessoa_id+'\')"><td><b>'+esc(s.pessoas ? s.pessoas.nome : '')+'</b><div class="small muted">'+fmtDoc(s.pessoas ? s.pessoas.cpf : '')+'</div></td><td>'+esc(s.cursos ? s.cursos.sigla : '')+'</td><td>'+esc(emp(s.pessoas && s.pessoas.empresa_id))+'</td><td>'+fmt(s.enviada_em)+' <span class="muted small">('+Math.max(0, -dias(s.enviada_em.slice(0,10)))+' dia(s))</span></td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma. Tudo em dia.</p>')+'</div>';
+  h += '<div class="card"><h3>Pré-matrículas aguardando análise ('+sols.length+')</h3>'+(sols.length ? '<div class="tw"><table><tr><th>Nome</th><th>Curso</th><th>Empresa</th><th>Pagamento</th><th>Enviada em</th></tr>'+sols.map(s => '<tr class="click" onclick="go(\'pessoa\',\''+s.pessoa_id+'\')"><td><b>'+esc(s.pessoas ? s.pessoas.nome : '')+'</b><div class="small muted">'+fmtDoc(s.pessoas ? s.pessoas.cpf : '')+'</div></td><td>'+esc(s.cursos ? s.cursos.sigla : '')+'</td><td>'+esc(emp(s.pessoas && s.pessoas.empresa_id))+'</td><td>'+(s.pago ? '<span class="bdg ok">OK</span>' : '<span class="bdg warn">Pendente</span>')+'</td><td>'+fmt(s.enviada_em)+' <span class="muted small">('+Math.max(0, -dias(s.enviada_em.slice(0,10)))+' dia(s))</span></td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma. Tudo em dia.</p>')+'</div>';
   const pp = Object.entries(porPessoa);
   h += '<div class="card"><h3>Documentos novos aguardando análise ('+docs.length+')</h3>'+(pp.length ? '<div class="tw"><table><tr><th>Nome</th><th>Documentos</th><th>Desde</th></tr>'+pp.map(([id, x]) => '<tr class="click" onclick="go(\'pessoa\',\''+id+'\')"><td><b>'+esc(x.nome)+'</b></td><td>'+x.n+'</td><td>'+fmt(x.desde)+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum.</p>')+'</div>';
   h += '<div class="card"><h3>Com pendência, aguardando o aluno ('+pend.length+')</h3>'+(pend.length ? '<div class="tw"><table><tr><th>Nome</th><th>Curso</th><th>Pendência</th></tr>'+pend.map(s => '<tr class="click" onclick="go(\'pessoa\',\''+s.pessoa_id+'\')"><td><b>'+esc(s.pessoas ? s.pessoas.nome : '')+'</b></td><td>'+esc(s.cursos ? s.cursos.sigla : '')+'</td><td class="small">'+esc(s.obs_escola || '')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma.</p>')+'</div>';
@@ -1195,7 +1226,7 @@ function editarCurso(id){
     '<label class="f"><span>Nota mínima para aprovação (0 a 10)</span><input id="cuNota" type="number" min="0" max="10" step="0.1" value="'+esc(c.nota_minima ?? '')+'" placeholder="conforme a portaria"></label>'+
     '<label class="f w"><span>Regra da nota</span><select id="cuNotaDisc"><option value="0"'+(c.nota_por_disciplina ? '' : ' selected')+'>Aprova pela média das disciplinas</option><option value="1"'+(c.nota_por_disciplina ? ' selected' : '')+'>Exige a nota mínima em cada disciplina (reprova se qualquer uma ficar abaixo)</option></select></label>'+
     '<label class="f w"><span>Documentos exigidos — um por linha. Comece com ? os que são "se aplicável".</span><textarea id="cuDocs" rows="9">'+esc((c.docs_exigidos || []).join('\n'))+'</textarea></label></div>',
-    '<button class="btn" onclick="salvarCurso(\''+id+'\',this)">Salvar</button>');
+    (id ? '<button class="btn dg" onclick="excluirCurso(\''+id+'\',this)">Excluir curso</button> ' : '')+'<button class="btn" onclick="salvarCurso(\''+id+'\',this)">Salvar</button>');
 }
 async function modalDisciplinas(cursoId){
   const c = curso(cursoId), l = await q(sb.from('disciplinas').select('*').eq('curso_id', cursoId).order('ordem'));
@@ -1222,6 +1253,20 @@ async function salvarDisciplinas(cursoId, btn){
     if(sobras.length) await q(sb.from('disciplinas').delete().in('id', sobras));
     fecharModal(); toast('Disciplinas salvas: ' + linhas.length + '.'); recarregar();
   } finally { solta(); }
+}
+async function excluirCurso(id, btn){
+  const c = curso(id);
+  const cnt = async t => { const { count, error } = await sb.from(t).select('id', { count: 'exact', head: true }).eq('curso_id', id); if(error) throw error; return count || 0; };
+  const [ns, nt, nc] = await Promise.all([cnt('solicitacoes'), cnt('turmas'), cnt('certificacoes')]);
+  if(ns + nt + nc) return toast('O curso ' + c.sigla + ' tem histórico (' + [ns && ns + ' pré-matrícula(s)', nt && nt + ' turma(s)', nc && nc + ' certificado(s)'].filter(Boolean).join(', ') + ') e não pode ser excluído. Para tirá-lo da lista dos alunos, marque "Ativo: Não".', 'erro');
+  if(!confirm('Excluir o curso ' + c.sigla + ' e as disciplinas dele? Essa ação não pode ser desfeita.')) return;
+  const solta = travar(btn);
+  try { await q(sb.from('cursos').delete().eq('id', id)); fecharModal(); toast('Curso excluído.'); recarregar(); } finally { solta(); }
+}
+async function marcarPago(id, pago, btn){
+  if(!pago && !confirm('Desfazer a confirmação de pagamento?')) return;
+  const solta = travar(btn);
+  try { await q(sb.from('solicitacoes').update({ pago }).eq('id', id)); toast(pago ? 'Pagamento confirmado. A pré-matrícula já pode ser aprovada.' : 'Confirmação de pagamento desfeita.'); recarregar(); } finally { solta(); }
 }
 async function salvarCurso(id, btn){
   const dados = { sigla: $('#cuSigla').value.trim().toUpperCase(), nome: $('#cuNome').value.trim(), grupo_validade: $('#cuGrupo').value.trim().toUpperCase() || null, validade_meses: Number($('#cuMeses').value || 0), freq_minima: $('#cuFreq').value === '' ? null : Number($('#cuFreq').value), nota_minima: $('#cuNota').value === '' ? null : Number($('#cuNota').value), nota_por_disciplina: $('#cuNotaDisc').value === '1', ativo: $('#cuAtivo').value === '1', docs_exigidos: $('#cuDocs').value.split('\n').map(s => s.trim()).filter(Boolean) };
@@ -1846,7 +1891,7 @@ async function definirFuncao(id, tipo){
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
