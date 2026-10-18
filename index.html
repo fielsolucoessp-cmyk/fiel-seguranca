@@ -59,6 +59,18 @@ th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;lett
 .funil{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:8px 12px;align-items:center;font-size:14px}
 .funil .trilho{background:#eef1f6;border-radius:6px;height:18px}
 .funil .enc{background:#1f3260;height:100%;border-radius:6px;min-width:2px}
+.gg{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:14px;margin-bottom:14px}.gg>.card{margin:0}.gg>.larga{grid-column:1/-1}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--mut);margin:2px 0 8px}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.hb{display:flex;flex-direction:column;gap:10px;font-size:13px}
+.hb .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px}.hb .ln>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hb .ln>span:last-child{white-space:nowrap;color:var(--mut)}
+.hb .tr{position:relative;background:#eef1f6;border-radius:4px;height:14px}
+.hb .tr i{display:block;height:100%;border-radius:0 4px 4px 0;background:#1f3260;min-width:2px}.hb .tr:hover i{background:#f28c28}
+.hb .ref{position:absolute;top:-4px;bottom:-4px;width:2px;background:#1b2333}
+.pilha{display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden;margin:8px 0 10px;background:#fff}.pilha i{display:block;height:100%;min-width:3px}
+.grafico .col line{opacity:0}.grafico .col:hover line{opacity:1}.grafico .linha{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+#tt{position:fixed;pointer-events:none;background:#1b2333;color:#fff;font-size:12px;padding:7px 10px;border-radius:7px;z-index:999;display:none;max-width:260px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+details.num summary{cursor:pointer;font-size:12px;color:var(--mut);margin-top:6px}details.num table{font-size:12px}
 .visor{background:#eef1f6;border-radius:8px;overflow:auto;max-height:70vh;text-align:center}
 .visor img{max-width:100%;height:auto;display:block;margin:0 auto}
 .visor iframe{width:100%;height:68vh;border:0;display:block}
@@ -106,7 +118,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.9.0';
+const VERSAO = '1.10.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -978,7 +990,7 @@ async function vPainel(){
     k('Turmas abertas', turmasAnd, 'turmas')+
     k('Cursos vencidos ou vencendo em 30 dias', venc30, 'vencimentos', 'var(--bad)')+
     k('Pessoas cadastradas', pessoas, 'pessoas')+
-    '</div>'+await blocoIndicadores()+'<div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
+    '</div>'+await blocoIndicadores()+await blocoGraficos()+'<div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
 }
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function graficoVencimentos(meses){
@@ -1018,6 +1030,83 @@ async function blocoIndicadores(){
   h += '<div class="card"><h3>Funil dos últimos 12 meses</h3><div class="funil">'+etapas.map(([nome, v], i) => '<div>'+nome+'<div class="small muted"><b style="color:var(--tx)">'+v+'</b>'+(i > 0 && etapas[i - 1][1] ? ' · '+pct(v, etapas[i - 1][1])+' da etapa anterior' : '')+'</div></div><div class="trilho"><div class="enc" style="width:'+Math.max(0.5, 100 * v / base)+'%"></div></div>').join('')+'</div></div>';
   h += '<div class="card"><h3>Empresas clientes (top 10)</h3>'+(d.empresas.length ? '<div class="tw"><table><tr><th>Empresa</th><th>Vigilantes</th><th>Vencendo em 90 dias</th><th>Vencidos</th></tr>'+d.empresas.map(e => '<tr><td><b>'+esc(e.nome)+'</b></td><td>'+e.vigilantes+'</td><td>'+(e.vencendo ? '<span class="bdg warn">'+e.vencendo+'</span>' : '0')+'</td><td>'+(e.vencidos ? '<span class="bdg bad">'+e.vencidos+'</span>' : '0')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma empresa cadastrada ainda.</p>')+'</div>';
   return h;
+}
+// ---------- gráficos do painel (v1.10) ----------
+const fmtN = v => v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+const rotMes = (m, curto) => { const [a, mm] = m.split('-'); return MESES[Number(mm) - 1] + (curto ? '' : '/' + a.slice(2)); };
+function topoBom(v){ if(v <= 4) return 4; const p = 10 ** Math.floor(Math.log10(v)); for(const m of [2, 4, 6, 8, 10]) if(m * p >= v) return m * p; return v; }
+function iniciarDica(){
+  if(window.__ttOk) return; window.__ttOk = true;
+  const tt = document.createElement('div'); tt.id = 'tt'; document.body.appendChild(tt);
+  const mover = ev => { const x = Math.min(ev.clientX + 14, innerWidth - tt.offsetWidth - 8); tt.style.left = Math.max(8, x) + 'px'; tt.style.top = (ev.clientY + 16) + 'px'; };
+  document.addEventListener('mouseover', ev => { const el = ev.target.closest && ev.target.closest('[data-tt]'); if(!el){ tt.style.display = 'none'; return; } tt.innerHTML = el.getAttribute('data-tt'); tt.style.display = 'block'; mover(ev); });
+  document.addEventListener('mousemove', ev => { if(tt.style.display === 'block') mover(ev); });
+  document.addEventListener('scroll', () => { tt.style.display = 'none'; }, true);
+}
+const dica = html => ' data-tt="' + String(html).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"';
+function graficoLinhas(meses, series, rotulo, largo){
+  const estreito = window.innerWidth < 600, W = estreito ? 360 : largo ? 900 : 560, H = estreito ? 220 : largo ? 250 : 230, mL = 30, mR = 12, mT = 14, mB = 26, n = meses.length;
+  const vals = series.flatMap(s => meses.map(m => m[s.k]).filter(v => v !== null && v !== undefined));
+  const max = topoBom(Math.max(1, ...vals)), passo = (W - mL - mR) / Math.max(1, n - 1);
+  const X = i => mL + i * passo, Y = v => H - mB - (H - mB - mT) * v / max;
+  let g = '';
+  [0, max / 2, max].forEach(t => { g += '<line x1="'+mL+'" x2="'+(W - mR)+'" y1="'+Y(t)+'" y2="'+Y(t)+'" stroke="'+(t ? '#eef1f6' : '#dfe3ec')+'"/><text x="'+(mL - 6)+'" y="'+(Y(t) + 4)+'" text-anchor="end">'+fmtN(t)+'</text>'; });
+  meses.forEach((m, i) => { if(!estreito || (n - 1 - i) % 2 === 0) g += '<text x="'+X(i)+'" y="'+(H - 8)+'" text-anchor="middle">'+rotMes(m.mes, true)+'</text>'; });
+  series.forEach(s => {
+    let d = '', pen = false;
+    meses.forEach((m, i) => { const v = m[s.k]; if(v === null || v === undefined){ pen = false; return; } d += (pen ? 'L' : 'M') + X(i) + ',' + Y(v) + ' '; pen = true; });
+    g += '<path class="linha" d="'+d+'" stroke="'+s.cor+'"/>';
+    meses.forEach((m, i) => { const v = m[s.k]; if(v !== null && v !== undefined && (v > 0 || series.length === 1)) g += '<circle cx="'+X(i)+'" cy="'+Y(v)+'" r="4" fill="'+s.cor+'" stroke="#fff" stroke-width="2"/>'; });
+  });
+  meses.forEach((m, i) => {
+    const t = '<b>'+rotMes(m.mes)+'</b><br>' + series.map(s => '<span style="color:'+s.cor+'">●</span> '+s.nome+': <b>'+fmtN(m[s.k])+'</b>'+(s.un || '')).join('<br>');
+    g += '<g class="col"'+dica(t)+'><line x1="'+X(i)+'" x2="'+X(i)+'" y1="'+mT+'" y2="'+(H - mB)+'" stroke="#9aa3b5" stroke-dasharray="3 3"/><rect x="'+(X(i) - passo / 2)+'" y="0" width="'+passo+'" height="'+(H - mB)+'" fill="transparent"/></g>';
+  });
+  const leg = series.length > 1 ? '<div class="leg">'+series.map(s => '<span><i style="background:'+s.cor+'"></i>'+s.nome+' <b style="color:var(--tx)">'+fmtN(meses.reduce((a, m) => a + (m[s.k] || 0), 0))+'</b></span>').join('')+'</div>' : '';
+  const tab = '<details class="num"><summary>Ver números</summary><div class="tw"><table><tr><th>Mês</th>'+series.map(s => '<th>'+s.nome+'</th>').join('')+'</tr>'+meses.map(m => '<tr><td>'+rotMes(m.mes)+'</td>'+series.map(s => '<td>'+fmtN(m[s.k])+'</td>').join('')+'</tr>').join('')+'</table></div></details>';
+  return leg + '<svg class="grafico" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(rotulo)+'">'+g+'</svg>' + tab;
+}
+function barrasH(itens, o){ // itens: [{nome, v, txt, tt, ref}]
+  if(!itens.length) return '<p class="muted small">Sem dados ainda.</p>';
+  const max = o.max || Math.max(1, ...itens.map(i => i.v || 0));
+  return '<div class="hb">'+itens.map(i => '<div><div class="ln"><span title="'+esc(i.nome)+'">'+esc(i.nome)+'</span><span>'+i.txt+'</span></div><div class="tr"'+dica(i.tt || (esc(i.nome)+': <b>'+fmtN(i.v)+'</b>'))+'>'+(i.v ? '<i style="width:'+Math.min(100, 100 * i.v / max)+'%"></i>' : '')+(i.ref ? '<span class="ref" style="left:'+Math.min(100, 100 * i.ref / max)+'%"></span>' : '')+'</div></div>').join('')+'</div>';
+}
+function pilha(partes){ // [{nome, v, cor}]
+  const tot = partes.reduce((a, p) => a + p.v, 0);
+  if(!tot) return '<p class="muted small">Sem dados ainda.</p>';
+  const pc = v => Math.round(100 * v / tot) + '%';
+  return '<div class="pilha">'+partes.filter(p => p.v).map(p => '<i style="flex:'+p.v+';background:'+p.cor+'"'+dica(p.nome+': <b>'+fmtN(p.v)+'</b> ('+pc(p.v)+')')+'></i>').join('')+'</div>'+
+    '<div class="leg">'+partes.map(p => '<span><i style="background:'+p.cor+'"></i>'+p.nome+' <b style="color:var(--tx)">'+fmtN(p.v)+'</b> · '+pc(p.v)+'</span>').join('')+'</div>';
+}
+async function blocoGraficos(){
+  const { data: d, error } = await sb.rpc('indicadores_graficos');
+  if(error || !d) return '';
+  iniciarDica();
+  const card = (tit, sub, corpo, cls) => '<div class="card'+(cls ? ' '+cls : '')+'"><h3 style="margin-bottom:2px">'+tit+'</h3><p class="small muted" style="margin:0 0 8px">'+sub+'</p>'+corpo+'</div>';
+  let h = '<h2 style="margin-top:22px">Gráficos</h2><div class="gg">';
+  h += card('Movimento mês a mês', 'Últimos 12 meses. Passe o mouse (ou toque) sobre um mês para ver os números.',
+    graficoLinhas(d.mensal, [{ k: 'cadastros', nome: 'Cadastros', cor: '#2a78d6' }, { k: 'enviadas', nome: 'Pré-matrículas enviadas', cor: '#eb6834' }, { k: 'formados', nome: 'Formados', cor: '#1baf7a' }], 'Cadastros, pré-matrículas e formados por mês', true), 'larga');
+  const v = d.validades;
+  h += card('Situação dos cursos dos vigilantes', 'Último curso de cada vigilante, por tipo (formação, reciclagem e extensões).',
+    pilha([{ nome: 'Em dia', v: v.em_dia, cor: 'var(--ok)' }, { nome: 'Vence em até 90 dias', v: v.vencendo, cor: 'var(--warn)' }, { nome: 'Vencido', v: v.vencidos, cor: 'var(--bad)' }]) +
+    '<p class="small muted" style="margin:0">'+(v.vencendo + v.vencidos ? '<b style="color:var(--tx)">'+fmtN(v.vencendo + v.vencidos)+'</b> vigilante(s) são público de reciclagem agora.' : 'Ninguém precisando de reciclagem agora.')+'</p>');
+  h += card('Procura por curso', 'Pré-matrículas enviadas nos últimos 12 meses e quantos já se formaram.',
+    barrasH(d.cursos.map(c => ({ nome: c.sigla, v: c.enviadas, txt: fmtN(c.enviadas)+' · '+fmtN(c.concluidas)+' formado(s)', tt: '<b>'+esc(c.sigla)+'</b><br>Pré-matrículas: '+fmtN(c.enviadas)+'<br>Formados: '+fmtN(c.concluidas) })), {}));
+  const dc = d.docs;
+  h += card('Documentos', 'Situação de todos os documentos enviados e os tipos mais recusados (12 meses).',
+    pilha([{ nome: 'Aprovados', v: dc.aprovado, cor: 'var(--ok)' }, { nome: 'Aguardando análise', v: dc.enviado, cor: '#1f3260' }, { nome: 'Recusados', v: dc.recusado, cor: 'var(--bad)' }]) +
+    (d.recusas.length ? '<div class="secao" style="margin-top:4px">Recusas por tipo</div>' + barrasH(d.recusas.map(r => ({ nome: r.tipo, v: r.n, txt: fmtN(r.n) })), {}) : ''));
+  const comTempo = d.tempo_mes.filter(m => m.h !== null);
+  h += card('Tempo de análise de documentos', 'Média, em horas, entre o envio pelo aluno e a análise da escola.',
+    comTempo.length ? graficoLinhas(d.tempo_mes, [{ k: 'h', nome: 'Horas até a análise', cor: '#1f3260', un: ' h' }], 'Tempo médio de análise de documentos por mês') : '<p class="muted small">Nenhum documento analisado nos últimos 12 meses.</p>');
+  h += card('Frequência média por turma', 'Últimas 10 turmas. A linha vertical marca a frequência mínima do curso.',
+    barrasH(d.turmas.map(t => ({ nome: t.codigo, v: t.freq_media, ref: t.freq_minima,
+      txt: (t.freq_media === null ? 'sem chamada' : fmtN(t.freq_media)+'%')+' · '+t.aprovados+'/'+t.alunos+' aprov.',
+      tt: '<b>'+esc(t.codigo)+'</b> ('+esc(t.sigla)+')<br>Frequência média: '+(t.freq_media === null ? '—' : fmtN(t.freq_media)+'%')+(t.freq_minima ? '<br>Mínimo do curso: '+fmtN(t.freq_minima)+'%' : '')+'<br>Alunos: '+t.alunos+' · aprovados: '+t.aprovados+' · reprovados: '+t.reprovados })), { max: 100 }));
+  h += card('Nota média por disciplina', 'Das menores para as maiores (12 meses). A linha vertical marca a nota mínima do curso.',
+    barrasH(d.notas.map(n => ({ nome: n.nome, v: n.media, ref: n.nota_minima, txt: fmtN(n.media)+(n.nota_minima && n.media < n.nota_minima ? ' <span class="bdg bad">abaixo</span>' : ''),
+      tt: '<b>'+esc(n.nome)+'</b> ('+esc(n.sigla)+')<br>Média: '+fmtN(n.media)+' em '+n.qtd+' nota(s)'+(n.nota_minima ? '<br>Mínima: '+fmtN(n.nota_minima) : '') })), { max: 10 }));
+  return h + '</div>';
 }
 async function vAnalise(){
   const eid = S.perfil.escola_id;
