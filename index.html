@@ -123,7 +123,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.15.0';
+const VERSAO = '1.16.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -253,7 +253,7 @@ async function entrar(sessao){
     if(perfil.tipo === 'aluno'){ const p = await q(sb.from('pessoas').select('id').eq('usuario_id', perfil.id).limit(1)); S.minhaPessoa = p[0] ? p[0].id : null; }
     S.hist = [];
     if(staff()) go('painel', null, false);
-    else if(perfil.tipo === 'empresa') go('vigilantes', null, false);
+    else if(perfil.tipo === 'empresa') go('einicio', null, false);
     else if(perfil.tipo === 'instrutor') go('aulas', null, false);
     else go('inicio', null, false);
   } catch(e){ console.error(e); }
@@ -374,7 +374,7 @@ function menu(){
   if(S.perfil.tipo === 'instrutor') return [['aulas','Minhas aulas']];
   if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : [], dono);
   if(S.dono) return dono;
-  if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
+  if(S.perfil.tipo === 'empresa') return [['einicio','Início'],['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
   const bg = S.badges || {}, n = k => bg[k] ? ' ('+bg[k]+')' : '';
   return [['inicio','Início'],['pre','Pré-matrículas'+n('pre')],['andamento','Cursos em andamento'],['meuscursos','Cursos concluídos'],['docs','Documentos'+n('docs')],['dados','Meus dados']];
 }
@@ -891,6 +891,69 @@ async function excluirPessoa(id){
   const docs = S.pessoa.docs.map(d => d.arquivo_path).concat(S.pessoa.docs.map(d => d.pdf_path).filter(Boolean), S.pessoa.docs.flatMap(d => (d.paginas || []).slice(1)), S.pessoa.certs.map(c => c.certificado_path).filter(Boolean));
   if(docs.length) await sb.storage.from('documentos').remove(docs);
   await q(sb.from('pessoas').delete().eq('id', id)); toast('Excluído.'); S.hist.length ? voltar() : go('pessoas', null, false);
+}
+
+/* ================= TELA: INÍCIO (empresa) ================= */
+function abrirVig(id, aba){ S._abaPid = id; S.abaP = aba || 'inicio'; go('pessoa', id); }
+async function vEmpresaInicio(){
+  const eid = S.perfil.id, hoje = hojeISO();
+  const lista = await buscarTodos(() => sb.from('pessoas').select('id,nome').eq('empresa_id', eid).order('nome'));
+  const ids = lista.map(p => p.id), nome = {}; lista.forEach(p => nome[p.id] = p.nome);
+  let sols = [], vals = [], docs = [];
+  for(let i = 0; i < ids.length; i += 150){
+    const f = ids.slice(i, i+150);
+    const [a, b, c] = await Promise.all([
+      q(sb.from('solicitacoes').select('id,pessoa_id,status,pago,turma_id,criado_em,cursos(sigla,nome,grupo_validade),turmas(codigo,inicio,fim)').in('pessoa_id', f).order('criado_em', { ascending: false })),
+      q(sb.from('v_validades').select('pessoa_id,sigla,grupo,vence_em').in('pessoa_id', f)),
+      q(sb.from('documentos').select('id,pessoa_id,tipo,status,enviado_em').in('pessoa_id', f))
+    ]);
+    sols = sols.concat(a); vals = vals.concat(b); docs = docs.concat(c);
+  }
+  const sig = s => s.cursos ? s.cursos.sigla : '';
+  const pre = sols.filter(s => ['rascunho','enviada','pendente'].includes(s.status));
+  const and = sols.filter(s => ['aprovada','matriculada'].includes(s.status));
+  const conc = sols.filter(s => s.status === 'concluida');
+  const recus = docs.filter(d => d.status === 'recusado' && !docs.some(o => o.id !== d.id && o.pessoa_id === d.pessoa_id && o.tipo === d.tipo && o.enviado_em > d.enviado_em && o.status !== 'recusado'));
+  const abertoGrupo = (pid, g) => sols.some(s => s.pessoa_id === pid && ['rascunho','enviada','pendente','aprovada','matriculada'].includes(s.status) && s.cursos && (s.cursos.grupo_validade || s.cursos.sigla) === g);
+  const venc = vals.filter(v => dias(v.vence_em) < 0), v30 = vals.filter(v => dias(v.vence_em) >= 0 && dias(v.vence_em) <= 30), v90 = vals.filter(v => dias(v.vence_em) > 30 && dias(v.vence_em) <= 90);
+  // ---- tarefas
+  const tarefas = [];
+  pre.filter(s => s.status === 'pendente').forEach(s => tarefas.push([1, 'bad', 'Corrigir pendência da pré-matrícula', nome[s.pessoa_id], sig(s), 'abrirVig(\''+s.pessoa_id+'\',\'pre\')', 'Corrigir']));
+  recus.forEach(d => tarefas.push([1, 'bad', 'Reenviar documento recusado ('+esc(d.tipo)+')', nome[d.pessoa_id], '', 'abrirVig(\''+d.pessoa_id+'\',\'docs\')', 'Reenviar']));
+  venc.concat(v30).filter(v => !abertoGrupo(v.pessoa_id, v.grupo)).forEach(v => tarefas.push([dias(v.vence_em) < 0 ? 1 : 2, dias(v.vence_em) < 0 ? 'bad' : 'warn', (dias(v.vence_em) < 0 ? 'Curso vencido' : 'Curso vence em '+dias(v.vence_em)+' dia(s)')+' — fazer a pré-matrícula de atualização', nome[v.pessoa_id], v.sigla, 'abrirVig(\''+v.pessoa_id+'\',\'pre\')', 'Pré-matrícula']));
+  pre.filter(s => s.status === 'rascunho').forEach(s => tarefas.push([2, 'warn', 'Enviar documentos e mandar para análise', nome[s.pessoa_id], sig(s), 'abrirVig(\''+s.pessoa_id+'\',\'pre\')', 'Continuar']));
+  pre.filter(s => s.status === 'enviada' && !s.pago).forEach(s => tarefas.push([3, '', 'Aguardando a confirmação do pagamento pela escola', nome[s.pessoa_id], sig(s), 'abrirVig(\''+s.pessoa_id+'\',\'pre\')', 'Ver']));
+  tarefas.sort((a, b) => a[0] - b[0]);
+  const k = (t, v, acao, cor) => '<div class="kpi" onclick="'+acao+'"><span>'+t+'</span><b style="color:'+(v && cor ? cor : 'inherit')+'">'+v+'</b></div>';
+  let h = '<h2>Início</h2><div class="kpis">'+
+    k('Vigilantes cadastrados', lista.length, 'irMenu(\'vigilantes\')')+
+    k('Tarefas pendentes', tarefas.filter(t => t[0] < 3).length, 'document.getElementById(\'eTar\').scrollIntoView({behavior:\'smooth\'})', 'var(--or)')+
+    k('Em pré-matrícula', pre.length, 'document.getElementById(\'ePre\').scrollIntoView({behavior:\'smooth\'})', 'var(--warn)')+
+    k('Cursos em andamento', and.length, 'document.getElementById(\'eAnd\').scrollIntoView({behavior:\'smooth\'})', 'var(--navy2)')+
+    k('Vencem em até 90 dias', v30.length + v90.length, 'irMenu(\'vencimentos\')', 'var(--warn)')+
+    k('Cursos vencidos', venc.length, 'irMenu(\'vencimentos\')', 'var(--bad)')+
+    '</div>';
+  if(!lista.length) return h + '<div class="card"><p>Nenhum vigilante cadastrado ainda.</p><p class="muted small">Comece cadastrando a sua equipe na aba Vigilantes (um a um ou importando uma lista).</p><button class="btn" onclick="irMenu(\'vigilantes\')">Ir para Vigilantes</button></div>';
+  // ---- tarefas
+  h += '<div class="secao mc" id="eTar">Tarefas</div><div class="card">';
+  h += tarefas.length ? '<div class="tw"><table><tr><th>O que fazer</th><th>Vigilante</th><th>Curso</th><th></th></tr>'+tarefas.slice(0, 40).map(t => '<tr><td>'+(t[1] ? '<span class="bdg '+t[1]+'">'+(t[1] === 'bad' ? 'Urgente' : 'Atenção')+'</span> ' : '<span class="bdg">Aguardando escola</span> ')+t[2]+'</td><td><b>'+esc(t[3] || '')+'</b></td><td>'+esc(t[4])+'</td><td><button class="btn sm '+(t[1] ? '' : 'sec')+'" onclick="'+t[5]+'">'+t[6]+'</button></td></tr>').join('')+'</table></div>'+(tarefas.length > 40 ? '<p class="small muted">Mostrando 40 de '+tarefas.length+'.</p>' : '') : '<p class="muted">Nenhuma tarefa pendente. Tudo em dia! ✅</p>';
+  h += '</div>';
+  // ---- situação da equipe
+  const pior = {}; vals.forEach(v => { if(!pior[v.pessoa_id] || v.vence_em < pior[v.pessoa_id]) pior[v.pessoa_id] = v.vence_em; });
+  const fx = [['Em dia (mais de 90 dias)', 'var(--ok)', 0], ['Vence em 31 a 90 dias', 'var(--warn)', 0], ['Vence em até 30 dias', '#e8590c', 0], ['Vencido', 'var(--bad)', 0], ['Sem curso registrado', '#c3c9d6', 0]];
+  lista.forEach(p => { const d = pior[p.id] ? dias(pior[p.id]) : null; fx[d === null ? 4 : d < 0 ? 3 : d <= 30 ? 2 : d <= 90 ? 1 : 0][2]++; });
+  h += '<div class="secao mc">Situação da equipe</div><div class="card"><p class="small muted" style="margin-top:0">Cada vigilante entra pela validade mais próxima entre os cursos dele.</p><div style="display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden">'+fx.filter(f => f[2]).map(f => '<div title="'+f[0]+': '+f[2]+'" style="flex:'+f[2]+';background:'+f[1]+'"></div>').join('')+'</div><div style="display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px">'+fx.map(f => '<span class="small"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+f[1]+';margin-right:6px"></span>'+f[0]+': <b>'+f[2]+'</b> ('+Math.round(100 * f[2] / lista.length)+'%)</span>').join('')+'</div></div>';
+  // ---- próximos vencimentos
+  const meses = []; for(let i = 0; i < 12; i++){ const m = addMeses(hoje.slice(0, 8) + '01', i).slice(0, 7); meses.push({ mes: m, n: vals.filter(v => v.vence_em.slice(0, 7) === m).length }); }
+  const prox = vals.filter(v => dias(v.vence_em) <= 120).sort((a, b) => a.vence_em.localeCompare(b.vence_em));
+  h += '<div class="secao mc">Próximos vencimentos</div><div class="card"><h3>Vencimentos por mês (próximos 12 meses)</h3>'+graficoVencimentos(meses)+'</div>';
+  h += '<div class="card"><h3>Vencidos e vencendo em até 120 dias <span class="muted">('+prox.length+')</span></h3>'+(prox.length ? '<div class="tw"><table><tr><th>Vigilante</th><th>Curso</th><th>Validade</th><th>Atualização</th></tr>'+prox.slice(0, 30).map(v => '<tr class="click" onclick="abrirVig(\''+v.pessoa_id+'\',\'pre\')"><td><b>'+esc(nome[v.pessoa_id] || '')+'</b></td><td>'+esc(v.sigla)+'</td><td>'+bdgValidade(v.vence_em)+'</td><td>'+(abertoGrupo(v.pessoa_id, v.grupo) ? '<span class="bdg ok">Pré-matrícula feita</span>' : '<span class="bdg warn">Não iniciada</span>')+'</td></tr>').join('')+'</table></div>'+(prox.length > 30 ? '<button class="btn sec sm" style="margin-top:8px" onclick="irMenu(\'vencimentos\')">Ver todos</button>' : '') : '<p class="muted">Nenhum curso vencido ou vencendo nos próximos 120 dias.</p>')+'</div>';
+  // ---- em pré-matrícula / andamento / concluídos
+  const tab = (l, col) => l.length ? '<div class="tw"><table><tr><th>Vigilante</th><th>Curso</th><th>Situação</th><th>'+col+'</th></tr>'+l.slice(0, 30).map(s => '<tr class="click" onclick="abrirVig(\''+s.pessoa_id+'\',\''+(['aprovada','matriculada'].includes(s.status) ? 'andamento' : s.status === 'concluida' ? 'meuscursos' : 'pre')+'\')"><td><b>'+esc(nome[s.pessoa_id] || '')+'</b></td><td>'+esc(sig(s))+'</td><td>'+bdg(SOL[s.status])+'</td><td class="small">'+(s.turmas ? 'Turma '+esc(s.turmas.codigo)+' · '+fmt(s.turmas.inicio)+' a '+fmt(s.turmas.fim) : s.status === 'enviada' ? (s.pago ? 'Pagamento confirmado' : 'Aguardando pagamento') : s.status === 'aprovada' ? 'Aguardando turma' : fmt(s.criado_em))+'</td></tr>').join('')+'</table></div>' : '<p class="muted small">Nenhum.</p>';
+  h += '<div class="secao mc" id="ePre">Em pré-matrícula ('+pre.length+')</div><div class="card">'+tab(pre, 'Detalhe')+'</div>';
+  h += '<div class="secao mc" id="eAnd">Cursos em andamento ('+and.length+')</div><div class="card">'+tab(and, 'Turma')+'</div>';
+  h += '<div class="secao mc">Concluídos recentemente</div><div class="card">'+tab(conc.slice(0, 10), 'Turma')+'</div>';
+  return h;
 }
 
 /* ================= TELA: VIGILANTES (empresa) ================= */
@@ -1899,7 +1962,7 @@ async function definirFuncao(id, tipo){
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), andamento: () => vPessoa(S.minhaPessoa, 'andamento'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), andamento: () => vPessoa(S.minhaPessoa, 'andamento'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), einicio: vEmpresaInicio, dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
