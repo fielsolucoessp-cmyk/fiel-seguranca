@@ -122,7 +122,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.11.2';
+const VERSAO = '1.12.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -1193,6 +1193,7 @@ function editarCurso(id){
     '<label class="f"><span>Validade (meses, 0 = sem validade)</span><input id="cuMeses" type="number" min="0" value="'+esc(c.validade_meses)+'"></label>'+
     '<label class="f"><span>Frequência mínima para aprovação (%)</span><input id="cuFreq" type="number" min="0" max="100" step="0.5" value="'+esc(c.freq_minima ?? '')+'" placeholder="conforme a portaria"></label>'+
     '<label class="f"><span>Nota mínima para aprovação (0 a 10)</span><input id="cuNota" type="number" min="0" max="10" step="0.1" value="'+esc(c.nota_minima ?? '')+'" placeholder="conforme a portaria"></label>'+
+    '<label class="f w"><span>Regra da nota</span><select id="cuNotaDisc"><option value="0"'+(c.nota_por_disciplina ? '' : ' selected')+'>Aprova pela média das disciplinas</option><option value="1"'+(c.nota_por_disciplina ? ' selected' : '')+'>Exige a nota mínima em cada disciplina (reprova se qualquer uma ficar abaixo)</option></select></label>'+
     '<label class="f w"><span>Documentos exigidos — um por linha. Comece com ? os que são "se aplicável".</span><textarea id="cuDocs" rows="9">'+esc((c.docs_exigidos || []).join('\n'))+'</textarea></label></div>',
     '<button class="btn" onclick="salvarCurso(\''+id+'\',this)">Salvar</button>');
 }
@@ -1222,7 +1223,7 @@ async function salvarDisciplinas(cursoId, btn){
   } finally { solta(); }
 }
 async function salvarCurso(id, btn){
-  const dados = { sigla: $('#cuSigla').value.trim().toUpperCase(), nome: $('#cuNome').value.trim(), grupo_validade: $('#cuGrupo').value.trim().toUpperCase() || null, validade_meses: Number($('#cuMeses').value || 0), freq_minima: $('#cuFreq').value === '' ? null : Number($('#cuFreq').value), nota_minima: $('#cuNota').value === '' ? null : Number($('#cuNota').value), ativo: $('#cuAtivo').value === '1', docs_exigidos: $('#cuDocs').value.split('\n').map(s => s.trim()).filter(Boolean) };
+  const dados = { sigla: $('#cuSigla').value.trim().toUpperCase(), nome: $('#cuNome').value.trim(), grupo_validade: $('#cuGrupo').value.trim().toUpperCase() || null, validade_meses: Number($('#cuMeses').value || 0), freq_minima: $('#cuFreq').value === '' ? null : Number($('#cuFreq').value), nota_minima: $('#cuNota').value === '' ? null : Number($('#cuNota').value), nota_por_disciplina: $('#cuNotaDisc').value === '1', ativo: $('#cuAtivo').value === '1', docs_exigidos: $('#cuDocs').value.split('\n').map(s => s.trim()).filter(Boolean) };
   if(!dados.sigla || !dados.nome) return toast('Informe sigla e nome.', 'erro');
   const solta = travar(btn);
   try {
