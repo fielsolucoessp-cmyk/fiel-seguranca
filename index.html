@@ -108,6 +108,8 @@ tr.click{cursor:pointer}tr.click:hover{background:#f7f9fc}
 .radio input{display:none}.radio label.on{border-color:var(--or);background:#fff5ec;color:var(--navy)}
 .lgpd{font-size:12px;color:var(--mut);background:#f7f9fc;border-radius:8px;padding:10px;margin:6px 0 12px;max-height:120px;overflow:auto}
 .chk{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:12px}.chk input{width:auto;margin-top:3px}
+.gbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;background:#fff;color:#1f1f1f;border:1px solid #747775;border-radius:8px;padding:10px 14px;font-weight:600;font-size:15px;cursor:pointer;margin:14px 0 4px}.gbtn:hover{background:#f6f8fc}.gbtn svg{width:20px;height:20px;flex:none}
+.ou{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:12px;margin:10px 0 12px}.ou:before,.ou:after{content:'';flex:1;border-top:1px solid var(--bd)}
 @media(max-width:640px){.fgrid{grid-template-columns:1fr}main{padding:12px}th,td{padding:8px 6px}}
 </style>
 </head>
@@ -123,7 +125,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.16.0';
+const VERSAO = '1.17.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -243,6 +245,7 @@ async function entrar(sessao){
     const perfil = await q(sb.from('perfis').select('*').eq('id', sessao.user.id).maybeSingle());
     if(!perfil){ $('#app').innerHTML = '<div class="auth"><div class="auth-box"><p>Seu cadastro não foi encontrado. Fale com a escola.</p><button class="btn" onclick="sair()">Sair</button></div></div>'; return; }
     S.perfil = perfil;
+    if(!perfil.consentimento_em && ['aluno','empresa'].includes(perfil.tipo) && ((sessao.user.app_metadata || {}).providers || [(sessao.user.app_metadata || {}).provider]).includes('google')) return telaCompletar();
     if(!S.escola || S.escola.id !== perfil.escola_id) S.escola = await q(sb.from('escolas').select('*').eq('id', perfil.escola_id).single());
     aplicarMarca();
     const rd = await sb.rpc('sou_dono'); S.dono = !rd.error && rd.data === true;
@@ -269,12 +272,13 @@ function telaAuth(aba){
   const nomeEscola = S.escola ? S.escola.nome : '';
   const abas = aba === 'nova' ? '' : '<div class="tabs"><button class="'+(aba==='entrar'?'on':'')+'" onclick="telaAuth(\'entrar\')">Entrar</button><button class="'+(aba==='cadastro'?'on':'')+'" onclick="telaAuth(\'cadastro\')">Criar conta</button></div>';
   let corpo = '';
-  if(aba === 'entrar') corpo =
+  const google = (t) => '<button class="gbtn" onclick="entrarGoogle(this)"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>'+t+'</button><div class="ou">ou</div>';
+  if(aba === 'entrar') corpo = google('Entrar com Google')+
     '<label class="f"><span>E-mail ou CPF/CNPJ</span><input id="aEmail" autocomplete="username"></label>'+
     '<label class="f"><span>Senha</span><input id="aSenha" type="password" autocomplete="current-password" onkeydown="if(event.key===\'Enter\')fazerLogin(this)"></label>'+
     '<button class="btn" style="width:100%" onclick="fazerLogin(this)">Entrar</button>'+
     '<p style="text-align:center;margin:14px 0 0"><a href="#" onclick="telaAuth(\'esqueci\');return false">Esqueci minha senha</a></p>';
-  if(aba === 'cadastro') corpo =
+  if(aba === 'cadastro') corpo = google('Criar conta com Google')+
     '<div class="radio"><label id="rAluno" class="on" onclick="tipoCad(\'aluno\')">Sou aluno / vigilante</label><label id="rEmpresa" onclick="tipoCad(\'empresa\')">Sou empresa</label></div>'+
     '<label class="f"><span id="lNome">Nome completo</span><input id="cNome"></label>'+
     '<label class="f"><span id="lDoc">CPF</span><input id="cDoc" inputmode="numeric"></label>'+
@@ -310,6 +314,38 @@ function tipoCad(t){
   $('#lNome').textContent = t === 'empresa' ? 'Razão social / nome da empresa' : 'Nome completo';
   $('#lDoc').textContent = t === 'empresa' ? 'CNPJ' : 'CPF';
   $('#txtLgpd').innerHTML = textoLgpd(t);
+}
+async function entrarGoogle(btn){
+  const solta = travar(btn, 'Abrindo o Google...');
+  const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: linkPortal(), queryParams: { prompt: 'select_account' } } });
+  if(error){ solta(); toast(traduzErro(error), 'erro'); }
+}
+function telaCompletar(){
+  const u = S.sessao.user, md = u.user_metadata || {};
+  $('#app').innerHTML = '<div class="auth"><div class="auth-box">'+logoHtml()+'<div class="brand">FIEL <b>Segurança Privada</b></div><div class="muted">'+esc(S.escola ? S.escola.nome : '')+'</div>'+
+    '<h3 style="margin:16px 0 4px">Complete seu cadastro</h3><p class="small muted" style="margin-top:0">Você entrou com o Google (<b>'+esc(u.email)+'</b>). Falta só isto para liberar o portal:</p>'+
+    '<div class="radio"><label id="rAluno" class="on" onclick="tipoCad(\'aluno\')">Sou aluno / vigilante</label><label id="rEmpresa" onclick="tipoCad(\'empresa\')">Sou empresa</label></div>'+
+    '<label class="f"><span id="lNome">Nome completo</span><input id="cNome" value="'+esc(md.full_name || md.name || '')+'"></label>'+
+    '<label class="f"><span id="lDoc">CPF</span><input id="cDoc" inputmode="numeric"></label>'+
+    '<label class="f"><span>Telefone / WhatsApp</span><input id="cTel" inputmode="tel" placeholder="(66) 99999-9999"></label>'+
+    '<div class="lgpd" id="txtLgpd">'+textoLgpd('aluno')+'</div>'+
+    '<label class="chk"><input type="checkbox" id="cLgpd"> <span>Li e concordo com o tratamento dos meus dados descrito acima.</span></label>'+
+    '<button class="btn" style="width:100%" onclick="salvarCompletar(this)">Concluir cadastro</button>'+
+    '<p style="text-align:center;margin:14px 0 0"><a href="#" onclick="sair();return false">Sair</a></p></div></div>';
+  S.tipoCad = 'aluno';
+}
+async function salvarCompletar(btn){
+  const t = S.tipoCad, nome = $('#cNome').value.trim(), doc = soDig($('#cDoc').value), tel = $('#cTel').value.trim();
+  if(nome.length < 3) return toast('Informe o nome.', 'erro');
+  if(t === 'aluno' && !cpfValido(doc)) return toast('CPF inválido.', 'erro');
+  if(t === 'empresa' && !cnpjValido(doc)) return toast('CNPJ inválido.', 'erro');
+  if(soDig(tel).length < 10) return toast('Informe o telefone com DDD.', 'erro');
+  if(!$('#cLgpd').checked) return toast('É preciso concordar com o tratamento dos dados.', 'erro');
+  const solta = travar(btn, 'Salvando...');
+  const { error } = await sb.rpc('completar_cadastro', { p_tipo: t, p_nome: nome, p_doc: doc, p_tel: tel, p_escola: SLUG });
+  solta();
+  if(error) return toast(traduzErro(error), 'erro');
+  toast('Cadastro concluído. Bem-vindo(a)!'); S.perfil = null; entrar(S.sessao);
 }
 async function fazerLogin(btn){
   let email = $('#aEmail').value.trim(); const senha = $('#aSenha').value;
