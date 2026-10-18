@@ -122,7 +122,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.11.1';
+const VERSAO = '1.11.2';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -1046,7 +1046,7 @@ async function blocoAniversarios(){
   const escola = (S.escola && S.escola.nome) || 'nossa escola';
   const cap = t => String(t || '').toLowerCase().replace(/(^|[\s(\-\/])([a-zà-ú])/g, (x, a, b) => a + b.toUpperCase()).replace(/ (De|Da|Do|Das|Dos|E|Em)(?= )/g, x => x.toLowerCase());
   const nomeEscola = cap(escola.replace(/\s+(LTDA|ME|EPP|EIRELI|S\/?A)\.?\s*$/i, ''));
-  const msg = a => '✨ *Feliz aniversário, ' + cap(a.nome.trim().split(/\s+/)[0]) + '!* ✨\n\nHoje o dia é todo seu! Desejamos muita saúde, paz, alegria e sucesso na sua jornada.\n\nQue este novo ano de vida venha repleto de conquistas, dentro e fora do serviço.\n\nConte sempre com a gente!\n\nUm forte abraço,\n*Equipe ' + nomeEscola + '*';
+  const msg = a => '✨ *Feliz aniversário, ' + cap(a.nome.trim().split(/\s+/)[0]) + '!* ✨\n\nHoje o dia é todo seu! Desejamos muita saúde, paz, alegria e sucesso na sua jornada.\n\nQue Deus te abençoe e te faça prosperar em tudo.\n\nConte sempre com a gente!\n\nUm forte abraço,\n*Equipe ' + nomeEscola + '*';
   const linkAniv = (tel, m) => { let d = soDig(tel); if(d.length < 10) return null; if(d.length <= 11) d = '55' + d; return 'https://api.whatsapp.com/send?phone=' + d + '&text=' + encodeURIComponent(m); };
   const ini = n => n.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
   const dm = d => d.slice(8, 10) + '/' + d.slice(5, 7);
