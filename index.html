@@ -122,7 +122,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.12.0';
+const VERSAO = '1.13.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -1201,7 +1201,7 @@ async function modalDisciplinas(cursoId){
   const c = curso(cursoId), l = await q(sb.from('disciplinas').select('*').eq('curso_id', cursoId).order('ordem'));
   S._disc = l;
   abrirModal('Disciplinas — ' + c.sigla, '<p class="small muted" style="margin-top:0">Cadastre as disciplinas do curso, a carga em horas-aula e o instrutor responsável. Confira a grade e a carga horária na portaria vigente da PF. Para aparecer na lista, o instrutor precisa ter acesso de <b>Instrutor</b> (aba Equipe).</p>'+
-    '<div class="tw"><table id="dsTab"><tr><th>Disciplina</th><th style="width:90px">Horas-aula</th><th>Instrutor</th><th></th></tr>'+l.map(linhaDisc).join('')+'</table></div>'+
+    '<div class="tw"><table id="dsTab"><tr><th>Disciplina</th><th style="width:90px">Horas-aula</th><th>Instrutor</th><th title="Avaliada por conceito (apto/inapto) ou linha de horas de prova: não entra no cálculo de notas">Sem nota</th><th></th></tr>'+l.map(linhaDisc).join('')+'</table></div>'+
     '<div class="bar" style="margin-top:8px"><button class="btn sec sm" onclick="$(\'#dsTab tbody\').insertAdjacentHTML(\'beforeend\', linhaDisc({}));totDisc()">+ Disciplina</button><span class="sp"></span><b id="dsTot" class="small"></b></div>',
     '<button class="btn" onclick="salvarDisciplinas(\''+cursoId+'\',this)">Salvar</button>');
   $('.mbox').classList.add('grande'); totDisc();
@@ -1209,11 +1209,12 @@ async function modalDisciplinas(cursoId){
 function linhaDisc(d){
   return '<tr class="dsLin" data-id="'+esc(d.id || '')+'"><td><input class="dsNome" value="'+esc(d.nome || '')+'" placeholder="ex.: Armamento e Tiro"></td><td><input class="dsHoras" type="number" min="0" step="0.5" value="'+esc(d.carga_horas ?? '')+'" oninput="totDisc()" style="width:80px"></td>'+
     '<td><select class="dsInst"><option value="">—</option>'+(S.instrutores || []).map(i => '<option value="'+i.id+'"'+(i.id === d.instrutor_id ? ' selected' : '')+'>'+esc(i.nome || i.email)+'</option>').join('')+'</select></td>'+
+    '<td style="text-align:center"><input type="checkbox" class="dsSemNota"'+(d.sem_nota ? ' checked' : '')+'></td>'+
     '<td><button class="btn sec sm" title="Remover" onclick="this.closest(\'tr\').remove();totDisc()">✕</button></td></tr>';
 }
 function totDisc(){ const n = [...document.querySelectorAll('.dsHoras')].reduce((a, x) => a + (Number(x.value) || 0), 0); const t = $('#dsTot'); if(t) t.textContent = 'Total: ' + n + ' horas-aula'; }
 async function salvarDisciplinas(cursoId, btn){
-  const linhas = [...document.querySelectorAll('.dsLin')].map((tr, i) => ({ id: tr.dataset.id || null, nome: tr.querySelector('.dsNome').value.trim(), carga_horas: Number(tr.querySelector('.dsHoras').value || 0), instrutor_id: tr.querySelector('.dsInst').value || null, ordem: i })).filter(x => x.nome);
+  const linhas = [...document.querySelectorAll('.dsLin')].map((tr, i) => ({ id: tr.dataset.id || null, nome: tr.querySelector('.dsNome').value.trim(), carga_horas: Number(tr.querySelector('.dsHoras').value || 0), instrutor_id: tr.querySelector('.dsInst').value || null, sem_nota: tr.querySelector('.dsSemNota').checked, ordem: i })).filter(x => x.nome);
   const solta = travar(btn);
   try {
     for(const d of linhas){ const { id, ...dados } = d; if(id) await q(sb.from('disciplinas').update(dados).eq('id', id)); else await q(sb.from('disciplinas').insert(Object.assign({ curso_id: cursoId, escola_id: S.perfil.escola_id }, dados))); }
