@@ -122,7 +122,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.13.0';
+const VERSAO = '1.13.1';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -602,9 +602,9 @@ async function vPessoa(id){
   const emAnalise = docs.filter(d => d.status === 'enviado').length;
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Documentos enviados</h3><span class="sp"></span>'+(staff() && emAnalise ? '<button class="btn ok sm" onclick="aprovarTodos()">Aprovar todos em análise ('+emAnalise+')</button>' : '')+(staff() && docs.length ? '<button class="btn nv sm" onclick="pdfsPessoa(this)">⬇ PDFs para o GESP</button>' : '')+'<button class="btn sec sm" onclick="modalEnvio(\'\')">Enviar outro documento</button></div>';
   h += docs.length ? '<div class="tw"><table><tr><th>Documento</th><th>Enviado</th><th>Validade</th><th>Situação</th><th></th></tr>'+docs.map(d => {
-    const st = estadoDoc(d);
+    const st = estadoDoc(d), reenviar = d.status === 'recusado' && !docs.some(o => o.id !== d.id && o.tipo === d.tipo && o.enviado_em > d.enviado_em && o.status !== 'recusado');
     return '<tr><td>'+esc(d.tipo)+(d.paginas && d.paginas.length > 1 ? ' <span class="muted small">('+d.paginas.length+' pág.)</span>' : '')+'</td><td>'+fmt(d.enviado_em)+'</td><td>'+(d.validade ? bdgValidade(d.validade) : '—')+'</td><td>'+bdg(DOCST[st])+(d.motivo && d.status === 'recusado' ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
-      '<td class="acoes"><button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\',\''+d.id+'\')">Ver</button>'+
+      '<td class="acoes">'+(reenviar ? '<button class="btn sm" data-t="'+esc(d.tipo)+'" onclick="modalEnvio(this.dataset.t)" title="Enviar uma nova via deste documento">↻ Enviar novo</button> ' : '')+'<button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\',\''+d.id+'\')">Ver</button>'+
       (staff() ? ' <button class="btn nv sm" onclick="baixarPdfDoc(\''+d.id+'\',this)" title="Baixar em PDF para o GESP">PDF</button>' : '')+
       (staff() ? ' <button class="btn ok sm" '+(d.status === 'aprovado' ? 'disabled' : '')+' onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" '+(d.status === 'recusado' ? 'disabled' : '')+' onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
   }).join('')+'</table></div>' : '<p class="muted">Nenhum documento enviado.</p>';
