@@ -42,6 +42,7 @@ header .logo{background:#fff;border-radius:6px;padding:2px 4px}
 .prog{height:10px;background:#e8ebf2;border-radius:6px;overflow:hidden;margin:4px 0}.prog>i{display:block;height:100%;background:var(--ok)}
 .cham{display:flex;align-items:center;gap:12px;padding:12px 10px;border:1px solid var(--bd);border-radius:10px;margin-bottom:8px;cursor:pointer;user-select:none;font-size:16px}.cham.falta{background:#fdeeee;border-color:#f3b4b4}.cham .st{margin-left:auto;font-weight:700}
 .secao{margin:14px 0 6px;font-size:14px;text-transform:uppercase;color:var(--mut);letter-spacing:.3px}
+.secao.mc{font-size:15px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;border-left:4px solid var(--or);background:#fff7ef;padding:7px 12px;border-radius:0 6px 6px 0;margin:22px 0 10px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 input,select,textarea{font:inherit;padding:9px 10px;border:1px solid var(--bd);border-radius:8px;width:100%;background:#fff;color:var(--tx)}
 label.f{display:block;margin-bottom:10px}label.f span{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
@@ -122,7 +123,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.14.0';
+const VERSAO = '1.15.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -183,7 +184,7 @@ const S = { sessao:null, perfil:null, escola:null, cursos:[], empresas:{}, minha
 const staff = () => !!S.perfil && ['staff','admin'].includes(S.perfil.tipo);
 const linkPortal = () => location.origin + location.pathname + (SLUG !== CONFIG.ESCOLA ? '?escola=' + encodeURIComponent(SLUG) : '');
 
-const SOL = { rascunho:['Rascunho',''], enviada:['Aguardando análise','warn'], pendente:['Pendência — corrigir','bad'], aprovada:['Aprovada','ok'], matriculada:['Matriculado','nv'], concluida:['Concluída','ok'], reprovado:['Reprovado','bad'], recusada:['Recusada','bad'], cancelada:['Cancelada',''] };
+const SOL = { rascunho:['Rascunho',''], enviada:['Aguardando análise','warn'], pendente:['Pendência — corrigir','bad'], aprovada:['Aceita','ok'], matriculada:['Matriculado','nv'], concluida:['Concluída','ok'], reprovado:['Reprovado','bad'], recusada:['Recusada','bad'], cancelada:['Cancelada',''] };
 const DOCST = { falta:['Não enviado',''], enviado:['Em análise','warn'], aprovado:['Aprovado','ok'], recusado:['Recusado','bad'], vencido:['Vencido','bad'] };
 const bdg = (par) => '<span class="bdg '+par[1]+'">'+esc(par[0])+'</span>';
 function bdgValidade(iso){ const d = dias(iso); if(d === null) return '<span class="bdg">—</span>'; if(d < 0) return '<span class="bdg bad">Vencido em '+fmt(iso)+'</span>'; if(d <= 30) return '<span class="bdg bad">Vence em '+d+' dia(s)</span>'; if(d <= 90) return '<span class="bdg warn">Vence em '+fmt(iso)+'</span>'; return '<span class="bdg ok">Válido até '+fmt(iso)+'</span>'; }
@@ -375,7 +376,7 @@ function menu(){
   if(S.dono) return dono;
   if(S.perfil.tipo === 'empresa') return [['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
   const bg = S.badges || {}, n = k => bg[k] ? ' ('+bg[k]+')' : '';
-  return [['inicio','Início'],['pre','Pré-matrículas'+n('pre')],['docs','Documentos'+n('docs')],['meuscursos','Cursos concluídos'],['dados','Meus dados']];
+  return [['inicio','Início'],['pre','Pré-matrículas'+n('pre')],['andamento','Cursos em andamento'],['meuscursos','Cursos concluídos'],['docs','Documentos'+n('docs')],['dados','Meus dados']];
 }
 function moldura(){
   if($('#main')) return;
@@ -583,7 +584,8 @@ async function vPessoa(id, aba){
   const recusados = docs.filter(d => d.status === 'recusado' && !docs.some(o => o.id !== d.id && o.tipo === d.tipo && o.enviado_em > d.enviado_em && o.status !== 'recusado')).length;
   const pendentes = sols.filter(s => s.status === 'pendente').length;
   if(souAluno){ const nb = { docs: recusados, pre: pendentes }; if(JSON.stringify(nb) !== JSON.stringify(S.badges || {})){ S.badges = nb; setTimeout(desenharMenu, 0); } }
-  const ABAS = [['inicio','Início'],['pre','Pré-matrículas'+(pendentes ? ' ('+pendentes+')' : '')],['docs','Documentos'+(recusados ? ' ('+recusados+')' : '')],['meuscursos','Cursos concluídos'],['dados',souAluno ? 'Meus dados' : 'Dados pessoais']];
+  const ABAS = [['inicio','Início'],['pre','Pré-matrículas'+(pendentes ? ' ('+pendentes+')' : '')],['andamento','Cursos em andamento'],['meuscursos','Cursos concluídos'],['docs','Documentos'+(recusados ? ' ('+recusados+')' : '')],['dados',souAluno ? 'Meus dados' : 'Dados pessoais']];
+  const ePre = s => ['rascunho','enviada','pendente','recusada','cancelada'].includes(s.status), eAnd = s => ['aprovada','matriculada'].includes(s.status);
   const ver = k => aba === 'tudo' || aba === k;
   const ativas = sols.filter(s => !['cancelada','recusada','concluida','reprovado'].includes(s.status));
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(souAluno ? (ABAS.find(x => x[0] === aba) || ['', 'Meu cadastro'])[1].replace(/ \(\d+\)$/, '') : p.nome)+'</h2><span class="sp"></span>';
@@ -595,7 +597,7 @@ async function vPessoa(id, aba){
     const avisos = [];
     if(recusados) avisos.push('<div class="aviso bad"><b>'+recusados+' documento(s) recusado(s).</b> Envie uma nova via. <button class="btn sm" onclick="abaPessoa(\'docs\')">Ver documentos</button></div>');
     if(pendentes) avisos.push('<div class="aviso bad"><b>Pré-matrícula com pendência.</b> Veja o que a escola pediu. <button class="btn sm" onclick="abaPessoa(\'pre\')">Ver pré-matrículas</button></div>');
-    sols.filter(s => s.status === 'enviada' && !s.pago).forEach(s => avisos.push('<div class="aviso"><b>'+esc(s.cursos ? s.cursos.sigla : '')+':</b> aguardando a confirmação do pagamento pela escola para seguir para a aprovação.</div>'));
+    sols.filter(s => s.status === 'enviada' && !s.pago).forEach(s => avisos.push('<div class="aviso"><b>'+esc(s.cursos ? s.cursos.sigla : '')+':</b> aguardando a confirmação do pagamento pela escola para a pré-matrícula ser aceita.</div>'));
     sols.filter(s => s.status === 'rascunho').forEach(s => avisos.push('<div class="aviso"><b>'+esc(s.cursos ? s.cursos.sigla : '')+':</b> envie os documentos e clique em "Enviar para análise". <button class="btn sm" onclick="abaPessoa(\'pre\')">Continuar</button></div>'));
     h += avisos.join('');
   }
@@ -606,8 +608,13 @@ async function vPessoa(id, aba){
   if(ver('pre')){
   // pré-matrículas
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Pré-matrículas</h3><span class="sp"></span><button class="btn" onclick="novaSolicitacao()">+ Nova pré-matrícula</button></div>';
-  h += sols.length ? sols.map(s => cardSolicitacao(s)).join('') : '<p class="muted">Nenhuma pré-matrícula ainda.</p>';
+  const lPre = staff() ? sols : sols.filter(ePre);
+  h += lPre.length ? lPre.map(s => cardSolicitacao(s)).join('') : '<p class="muted">Nenhuma pré-matrícula em aberto.'+(staff() || !sols.some(eAnd) ? '' : ' As pré-matrículas aceitas ficam em <a href="#" onclick="abaPessoa(\'andamento\');return false">Cursos em andamento</a>.')+'</p>';
   h += '</div>';
+  }
+  if(!staff() && ver('andamento')){
+    const lAnd = sols.filter(eAnd);
+    h += '<div class="card"><h3>Cursos em andamento</h3>'+(lAnd.length ? lAnd.map(s => s.status === 'matriculada' && s._and ? blocoAndamento(s) : cardSolicitacao(s)).join('') : '<p class="muted">Nenhum curso em andamento. Quando a escola aceitar a sua pré-matrícula, o curso aparece aqui.</p>')+'</div>';
   }
   if(ver('meuscursos')){
   // cursos e validades
@@ -658,28 +665,29 @@ async function vPessoa(id, aba){
 function abaPessoa(k){ if(S.perfil.tipo === 'aluno') irMenu(k); else { S.abaP = k; recarregar(); } }
 /* ---------- MEUS CURSOS (portal do aluno) ---------- */
 function cardMeusCursos(sols, certs){
-  const hoje = hojeISO(), pre = sols.filter(s => ['rascunho','enviada','pendente','aprovada'].includes(s.status)), and = sols.filter(s => s.status === 'matriculada');
+  const hoje = hojeISO(), pre = sols.filter(s => ['rascunho','enviada','pendente'].includes(s.status)), aceitas = sols.filter(s => s.status === 'aprovada'), and = sols.filter(s => s.status === 'matriculada');
   const venceDe = c => { const vm = c.cursos ? c.cursos.validade_meses : 0; return vm > 0 ? addMeses(c.data_conclusao, vm) : null; };
   const ultimo = {}; certs.forEach(c => { const k = (c.cursos && c.cursos.grupo_validade) || c.curso_id; if(!ultimo[k] || c.data_conclusao > ultimo[k].data_conclusao) ultimo[k] = c; });
   const venc = Object.values(ultimo).filter(c => venceDe(c) && venceDe(c) < hoje), conc = certs.filter(c => !venc.includes(c));
-  const ir = id => 'onclick="document.getElementById(\''+id+'\').scrollIntoView({behavior:\'smooth\'})"';
+  const ir = (id, aba) => staff() ? 'onclick="document.getElementById(\''+id+'\').scrollIntoView({behavior:\'smooth\'})"' : 'onclick="abaPessoa(\''+aba+'\')"';
   let h = '<div class="card"><h3>Meus cursos</h3><div class="kpis">'+
-    '<div class="kpi" '+ir('mcPre')+'><span>Em pré-matrícula</span><b style="color:var(--warn)">'+pre.length+'</b></div>'+
-    '<div class="kpi" '+ir('mcAnd')+'><span>Matriculado / em andamento</span><b style="color:var(--navy2)">'+and.length+'</b></div>'+
-    '<div class="kpi" '+ir('mcConc')+'><span>Concluídos</span><b style="color:var(--ok)">'+conc.length+'</b></div>'+
-    '<div class="kpi" '+ir('mcVenc')+'><span>Vencidos</span><b style="color:var(--bad)">'+venc.length+'</b></div></div>';
+    '<div class="kpi" '+ir('mcPre','pre')+'><span>Em pré-matrícula</span><b style="color:var(--warn)">'+pre.length+'</b></div>'+
+    '<div class="kpi" '+ir('mcAnd','andamento')+'><span>Em andamento (aceitas e matriculadas)</span><b style="color:var(--navy2)">'+(aceitas.length + and.length)+'</b></div>'+
+    '<div class="kpi" '+ir('mcConc','meuscursos')+'><span>Concluídos</span><b style="color:var(--ok)">'+conc.length+'</b></div>'+
+    '<div class="kpi" '+ir('mcVenc','meuscursos')+'><span>Vencidos</span><b style="color:var(--bad)">'+venc.length+'</b></div></div>';
   // em andamento
-  h += '<div class="secao" id="mcAnd">Em andamento</div>';
-  h += and.length ? and.map(s => blocoAndamento(s)).join('') : '<p class="muted small">Nenhum curso em andamento.</p>';
+  h += '<div class="secao mc" id="mcAnd">Em andamento</div>';
+  h += aceitas.length ? '<div class="tw"><table>'+aceitas.map(s => '<tr><td><b>'+esc(s.cursos ? s.cursos.sigla : '')+'</b> <span class="muted small">'+esc(s.cursos ? s.cursos.nome : '')+'</span></td><td>'+bdg(SOL[s.status])+'</td><td class="small">'+(s._fila ? s._fila+'º da fila para a próxima turma' : 'Aguardando a formação da turma')+'</td></tr>').join('')+'</table></div>' : '';
+  h += and.length ? and.map(s => blocoAndamento(s)).join('') : (aceitas.length ? '' : '<p class="muted small">Nenhum curso em andamento.</p>');
   // pré-matrícula
-  h += '<div class="secao" id="mcPre">Em pré-matrícula</div>';
-  h += pre.length ? '<div class="tw"><table>'+pre.map(s => '<tr><td><b>'+esc(s.cursos ? s.cursos.sigla : '')+'</b> <span class="muted small">'+esc(s.cursos ? s.cursos.nome : '')+'</span></td><td>'+bdg(SOL[s.status])+'</td><td class="small">'+(s._fila ? s._fila+'º da fila para a próxima turma' : s.status === 'pendente' ? 'Corrija o que a escola pediu abaixo' : s.status === 'rascunho' ? 'Envie os documentos e mande para análise' : 'Aguardando a escola')+'</td></tr>').join('')+'</table></div>' : '<p class="muted small">Nenhuma pré-matrícula aberta.</p>';
+  h += '<div class="secao mc" id="mcPre">Em pré-matrícula</div>';
+  h += pre.length ? '<div class="tw"><table>'+pre.map(s => '<tr><td><b>'+esc(s.cursos ? s.cursos.sigla : '')+'</b> <span class="muted small">'+esc(s.cursos ? s.cursos.nome : '')+'</span></td><td>'+bdg(SOL[s.status])+'</td><td class="small">'+(s._fila ? s._fila+'º da fila para a próxima turma' : s.status === 'pendente' ? 'Corrija o que a escola pediu (aba Pré-matrículas)' : s.status === 'rascunho' ? 'Envie os documentos e mande para análise' : s.pago ? 'Aguardando a análise da escola' : 'Aguardando a análise e a confirmação do pagamento')+'</td></tr>').join('')+'</table></div>' : '<p class="muted small">Nenhuma pré-matrícula aberta.</p>';
   // concluídos
-  h += '<div class="secao" id="mcConc">Concluídos</div>';
+  h += '<div class="secao mc" id="mcConc">Concluídos</div>';
   h += conc.length ? '<div class="tw"><table>'+conc.map(c => { const v = venceDe(c), k = (c.cursos && c.cursos.grupo_validade) || c.curso_id, renovado = ultimo[k] !== c;
       return '<tr><td><b>'+esc(c.cursos ? c.cursos.sigla : '')+'</b> <span class="muted small">'+esc(c.cursos ? c.cursos.nome : '')+'</span></td><td class="small">Concluído em '+fmt(c.data_conclusao)+'</td><td>'+(renovado ? '<span class="bdg">Substituído por curso mais recente</span>' : v ? bdgValidade(v) : '<span class="bdg ok">Sem validade</span>')+'</td></tr>'; }).join('')+'</table></div>' : '<p class="muted small">Nenhum curso concluído registrado.</p>';
   // vencidos
-  h += '<div class="secao" id="mcVenc">Vencidos</div>';
+  h += '<div class="secao mc" id="mcVenc">Vencidos</div>';
   h += venc.length ? '<div class="tw"><table>'+venc.map(c => '<tr><td><b>'+esc(c.cursos ? c.cursos.sigla : '')+'</b> <span class="muted small">'+esc(c.cursos ? c.cursos.nome : '')+'</span></td><td><span class="bdg bad">Venceu em '+fmt(venceDe(c))+'</span></td><td><button class="btn sm" onclick="novaSolicitacao()">Fazer a atualização</button></td></tr>').join('')+'</table></div>' : '<p class="muted small">Nenhum curso vencido.</p>';
   return h + '</div>';
 }
@@ -710,7 +718,7 @@ function cardSolicitacao(s){
   const editavel = !staff() && ['rascunho','pendente'].includes(s.status);
   let h = '<div class="sol"><h4>'+esc(c.sigla || '')+' — '+esc(c.nome || '')+' '+bdg(SOL[s.status])+'</h4>';
   h += '<div class="small muted">Criada em '+fmt(s.criado_em)+(s.enviada_em ? ' · enviada em '+fmt(s.enviada_em) : '')+(s.obs ? ' · obs.: '+esc(s.obs) : '')+'</div>';
-  if(s._fila) h += '<div class="aviso ok" style="margin-top:8px"><b>Aprovado!</b> Você é o <b>'+s._fila+'º</b> da fila para a próxima turma deste curso. A escola vai avisar quando a turma for formada.</div>';
+  if(s._fila) h += '<div class="aviso ok" style="margin-top:8px"><b>Pré-matrícula aceita!</b> Você é o <b>'+s._fila+'º</b> da fila para a próxima turma deste curso. A escola vai avisar quando a turma for formada.</div>';
   if(s.turmas) h += '<div class="aviso ok" style="margin-top:8px"><b>Turma '+esc(s.turmas.codigo)+'</b> · '+fmt(s.turmas.inicio)+' a '+fmt(s.turmas.fim)+(s.turmas.turno ? ' · '+esc(s.turmas.turno) : '')+(s.turmas.local ? ' · '+esc(s.turmas.local) : '')+'</div>';
   if(s.obs_escola) h += '<div class="aviso '+(s.status === 'pendente' || s.status === 'recusada' ? 'bad' : 'ok')+'" style="margin-top:8px"><b>Retorno da escola:</b> '+esc(s.obs_escola)+'</div>';
   if(s.status === 'enviada' && !staff()) h += '<div class="aviso" style="margin-top:8px">Recebemos sua pré-matrícula. A escola vai analisar os documentos'+(s.pago ? '' : ' e confirmar o pagamento')+' e você verá o resultado aqui.</div>';
@@ -840,7 +848,7 @@ async function confirmarRecusa(id, btn){
 async function salvarSituacao(id, btn){
   const status = $('#st_' + id).value, obs_escola = $('#ob_' + id).value.trim() || null;
   const s = S.pessoa.sols.find(x => x.id === id);
-  if(['aprovada','matriculada'].includes(status) && !['aprovada','matriculada','concluida','reprovado'].includes(s.status) && !s.pago) return toast('Confirme o pagamento (botão "Financeiro OK") antes de aprovar a pré-matrícula.', 'erro');
+  if(['aprovada','matriculada'].includes(status) && !['aprovada','matriculada','concluida','reprovado'].includes(s.status) && !s.pago) return toast('Confirme o pagamento (botão "Financeiro OK") antes de aceitar a pré-matrícula.', 'erro');
   const solta = travar(btn);
   try {
     await q(sb.from('solicitacoes').update({ status, obs_escola }).eq('id', id));
@@ -850,7 +858,7 @@ async function salvarSituacao(id, btn){
     }
     const p = S.pessoa.p, nomeCurso = (s.cursos && s.cursos.sigla) || '';
     if(status !== s.status && ['pendente','aprovada','recusada','matriculada'].includes(status)){
-      const txt = { pendente: 'tem pendências que precisam ser corrigidas', aprovada: 'foi APROVADA', recusada: 'não pôde ser aprovada', matriculada: 'foi confirmada: você está matriculado(a)' }[status];
+      const txt = { pendente: 'tem pendências que precisam ser corrigidas', aprovada: 'foi ACEITA', recusada: 'não pôde ser aceita', matriculada: 'foi confirmada: você está matriculado(a)' }[status];
       const msg = 'Olá, ' + p.nome.split(' ')[0] + '! Sua pré-matrícula no curso ' + nomeCurso + ' ' + txt + '.' + (obs_escola ? '\n' + obs_escola : '') + '\nAcompanhe pelo portal.' + assinatura();
       abrirModal('Situação atualizada', '<p>Deseja avisar o aluno agora?</p><div class="bar">'+botoesContato(p, 'Pré-matrícula ' + nomeCurso, msg)+'</div>', '');
       S._recarregarAoFechar = true;
@@ -1021,7 +1029,7 @@ async function vPainel(){
     k('Pré-matrículas aguardando análise', aguard, 'analise', 'var(--or)')+
     k('Documentos aguardando análise', docs, 'analise', 'var(--or)')+
     k('Pré-matrículas com pendência (aguardando aluno)', pend, 'analise')+
-    k('Aprovados aguardando turma', semTurma, 'turmas', 'var(--or)')+
+    k('Aceitos aguardando turma', semTurma, 'turmas', 'var(--or)')+
     k('Turmas abertas', turmasAnd, 'turmas')+
     k('Cursos vencidos ou vencendo em 30 dias', venc30, 'vencimentos', 'var(--bad)')+
     k('Pessoas cadastradas', pessoas, 'pessoas')+
@@ -1188,7 +1196,7 @@ async function vAnalise(){
   h += '<div class="card"><h3>Com pendência, aguardando o aluno ('+pend.length+')</h3>'+(pend.length ? '<div class="tw"><table><tr><th>Nome</th><th>Curso</th><th>Pendência</th></tr>'+pend.map(s => '<tr class="click" onclick="go(\'pessoa\',\''+s.pessoa_id+'\')"><td><b>'+esc(s.pessoas ? s.pessoas.nome : '')+'</b></td><td>'+esc(s.cursos ? s.cursos.sigla : '')+'</td><td class="small">'+esc(s.obs_escola || '')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma.</p>')+'</div>';
   const porCurso = {}; aprov.forEach(a => { const k = a.cursos ? a.cursos.sigla + ' — ' + a.cursos.nome : '?'; porCurso[k] = (porCurso[k] || 0) + 1; });
   const pc = Object.entries(porCurso);
-  h += '<div class="card"><div class="bar"><h3 style="margin:0">Aprovados aguardando turma ('+aprov.length+')</h3><span class="sp"></span>'+(aprov.length ? '<button class="btn nv sm" onclick="irMenu(\'turmas\')">Ir para Turmas</button>' : '')+'</div>'+(pc.length ? '<div class="tw"><table><tr><th>Curso</th><th>Alunos</th></tr>'+pc.map(([c, n]) => '<tr><td>'+esc(c)+'</td><td>'+n+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum.</p>')+'</div>';
+  h += '<div class="card"><div class="bar"><h3 style="margin:0">Aceitos aguardando turma ('+aprov.length+')</h3><span class="sp"></span>'+(aprov.length ? '<button class="btn nv sm" onclick="irMenu(\'turmas\')">Ir para Turmas</button>' : '')+'</div>'+(pc.length ? '<div class="tw"><table><tr><th>Curso</th><th>Alunos</th></tr>'+pc.map(([c, n]) => '<tr><td>'+esc(c)+'</td><td>'+n+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhum.</p>')+'</div>';
   return h;
 }
 async function vPessoas(){
@@ -1266,7 +1274,7 @@ async function excluirCurso(id, btn){
 async function marcarPago(id, pago, btn){
   if(!pago && !confirm('Desfazer a confirmação de pagamento?')) return;
   const solta = travar(btn);
-  try { await q(sb.from('solicitacoes').update({ pago }).eq('id', id)); toast(pago ? 'Pagamento confirmado. A pré-matrícula já pode ser aprovada.' : 'Confirmação de pagamento desfeita.'); recarregar(); } finally { solta(); }
+  try { await q(sb.from('solicitacoes').update({ pago }).eq('id', id)); toast(pago ? 'Pagamento confirmado. A pré-matrícula já pode ser aceita.' : 'Confirmação de pagamento desfeita.'); recarregar(); } finally { solta(); }
 }
 async function salvarCurso(id, btn){
   const dados = { sigla: $('#cuSigla').value.trim().toUpperCase(), nome: $('#cuNome').value.trim(), grupo_validade: $('#cuGrupo').value.trim().toUpperCase() || null, validade_meses: Number($('#cuMeses').value || 0), freq_minima: $('#cuFreq').value === '' ? null : Number($('#cuFreq').value), nota_minima: $('#cuNota').value === '' ? null : Number($('#cuNota').value), nota_por_disciplina: $('#cuNotaDisc').value === '1', ativo: $('#cuAtivo').value === '1', docs_exigidos: $('#cuDocs').value.split('\n').map(s => s.trim()).filter(Boolean) };
@@ -1555,7 +1563,7 @@ async function vTurma(id){
     const livres = t.vagas ? Math.max(0, t.vagas - mats.length) : null;
     h += '<div class="card"><div class="bar"><h3 style="margin:0">Fila de espera — aprovados sem turma ('+disp.length+')</h3><span class="sp"></span>'+(livres !== null ? '<span class="small muted">'+livres+' vaga(s) livre(s)</span>' : '')+'</div>';
     h += disp.length ? '<p class="small muted" style="margin-top:0">Por ordem de aprovação: quem foi aprovado primeiro entra primeiro. '+(livres !== null ? 'Os '+Math.min(livres, disp.length)+' primeiro(s) já vêm marcados.' : '')+' O aluno vê a posição dele no portal.</p><div class="tw"><table><tr><th><input type="checkbox" onclick="document.querySelectorAll(\'.selMat\').forEach(c=>c.checked=this.checked)"></th><th>Fila</th><th>Nome</th><th>CPF</th><th>Empresa</th><th>Aprovado em</th></tr>'+disp.map((d, i) => '<tr><td><input type="checkbox" class="selMat" value="'+d.id+'"'+(livres !== null && i < livres ? ' checked' : '')+'></td><td><b>'+(i + 1)+'º</b></td><td>'+esc(d.pessoas ? d.pessoas.nome : '')+'</td><td>'+fmtDoc(d.pessoas ? d.pessoas.cpf : '')+'</td><td class="small">'+esc(emp(d.pessoas && d.pessoas.empresa_id))+'</td><td>'+fmt(d.analisado_em || d.criado_em)+'</td></tr>').join('')+'</table></div><button class="btn" style="margin-top:10px" onclick="matricularSel(\''+t.id+'\',this)">Matricular selecionados</button>'
-      : '<p class="muted">Nenhum aluno aprovado aguardando turma neste curso.</p>';
+      : '<p class="muted">Nenhum aluno aceito aguardando turma neste curso.</p>';
     h += '</div>';
   }
   if(t.obs) h += '<p class="small muted">Obs.: '+esc(t.obs)+'</p>';
@@ -1891,7 +1899,7 @@ async function definirFuncao(id, tipo){
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), andamento: () => vPessoa(S.minhaPessoa, 'andamento'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
