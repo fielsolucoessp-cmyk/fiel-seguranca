@@ -125,7 +125,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.17.0';
+const VERSAO = '1.17.1';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -200,7 +200,6 @@ function abrirModal(titulo, corpo, botoes){
   $('#modal').classList.add('on');
 }
 function fecharModal(){ $('#modal').classList.remove('on'); $('#modal').innerHTML = ''; }
-$('#modal').addEventListener('click', e => { if(e.target.id === 'modal') fecharModal(); });
 function travar(btn, txt){ if(!btn) return () => {}; const o = btn.textContent; btn.disabled = true; btn.textContent = txt || 'Aguarde...'; return () => { btn.disabled = false; btn.textContent = o; }; }
 
 /* ================= MARCA E APLICATIVO ================= */
