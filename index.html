@@ -71,6 +71,10 @@ th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;lett
 .grafico .col line{opacity:0}.grafico .col:hover line{opacity:1}.grafico .linha{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 #tt{position:fixed;pointer-events:none;background:#1b2333;color:#fff;font-size:12px;padding:7px 10px;border-radius:7px;z-index:999;display:none;max-width:260px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.18)}
 details.num summary{cursor:pointer;font-size:12px;color:var(--mut);margin-top:6px}details.num table{font-size:12px}
+.aniv{border-left:4px solid var(--or)}.aniv .it{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 0;border-top:1px solid var(--bd)}.aniv .it:first-of-type{border-top:0}
+.aniv .av{width:40px;height:40px;border-radius:50%;background:#fff1e3;color:#b85c00;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.aniv .nm{flex:1 1 170px;min-width:0}.aniv .nm b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn.wpp{background:#1f9d55;color:#fff;white-space:nowrap}.btn.wpp.ok{background:#e8f6ee;color:#1f7a45}
 .visor{background:#eef1f6;border-radius:8px;overflow:auto;max-height:70vh;text-align:center}
 .visor img{max-width:100%;height:auto;display:block;margin:0 auto}
 .visor iframe{width:100%;height:68vh;border:0;display:block}
@@ -118,7 +122,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
   ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
 };
-const VERSAO = '1.10.0';
+const VERSAO = '1.11.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -982,7 +986,7 @@ async function vPainel(){
     cnt(sb.from('turmas').select('id', { count: 'exact', head: true }).eq('escola_id', eid).in('status', ['planejada','andamento']))
   ]);
   const k = (t, v, view, cor) => '<div class="kpi" onclick="irMenu(\''+view+'\')"><span>'+t+'</span><b style="color:'+(v && cor ? cor : 'inherit')+'">'+v+'</b></div>';
-  return '<h2>Painel</h2><div class="kpis">'+
+  return '<h2>Painel</h2>'+await blocoAniversarios()+'<div class="kpis">'+
     k('Pré-matrículas aguardando análise', aguard, 'analise', 'var(--or)')+
     k('Documentos aguardando análise', docs, 'analise', 'var(--or)')+
     k('Pré-matrículas com pendência (aguardando aluno)', pend, 'analise')+
@@ -1030,6 +1034,31 @@ async function blocoIndicadores(){
   h += '<div class="card"><h3>Funil dos últimos 12 meses</h3><div class="funil">'+etapas.map(([nome, v], i) => '<div>'+nome+'<div class="small muted"><b style="color:var(--tx)">'+v+'</b>'+(i > 0 && etapas[i - 1][1] ? ' · '+pct(v, etapas[i - 1][1])+' da etapa anterior' : '')+'</div></div><div class="trilho"><div class="enc" style="width:'+Math.max(0.5, 100 * v / base)+'%"></div></div>').join('')+'</div></div>';
   h += '<div class="card"><h3>Empresas clientes (top 10)</h3>'+(d.empresas.length ? '<div class="tw"><table><tr><th>Empresa</th><th>Vigilantes</th><th>Vencendo em 90 dias</th><th>Vencidos</th></tr>'+d.empresas.map(e => '<tr><td><b>'+esc(e.nome)+'</b></td><td>'+e.vigilantes+'</td><td>'+(e.vencendo ? '<span class="bdg warn">'+e.vencendo+'</span>' : '0')+'</td><td>'+(e.vencidos ? '<span class="bdg bad">'+e.vencidos+'</span>' : '0')+'</td></tr>').join('')+'</table></div>' : '<p class="muted">Nenhuma empresa cadastrada ainda.</p>')+'</div>';
   return h;
+}
+// ---------- aniversariantes (v1.11) ----------
+const anivChave = id => 'fiel-aniv-wpp:' + id + ':' + hojeISO();
+function anivEnviado(id){ try { return localStorage.getItem(anivChave(id)) === '1'; } catch(_){ return false; } }
+function anivMarcar(id, btn){ try { localStorage.setItem(anivChave(id), '1'); } catch(_){} if(btn){ btn.classList.add('ok'); btn.textContent = '✓ Enviado — enviar de novo'; } }
+async function blocoAniversarios(){
+  const { data: lista, error } = await sb.rpc('aniversariantes', { p_dias: 7 });
+  if(error || !lista) return '';
+  const hoje = lista.filter(a => a.em_dias === 0), prox = lista.filter(a => a.em_dias > 0);
+  const escola = (S.escola && S.escola.nome) || 'nossa escola';
+  const msg = a => 'Olá, ' + a.nome.trim().split(/\s+/)[0] + '! 🎉\n\nHoje é o seu dia, e toda a equipe da ' + escola + ' deseja a você um feliz aniversário! Muita saúde, paz e sucesso na sua jornada.\n\nUm grande abraço!';
+  const ini = n => n.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
+  const dm = d => d.slice(8, 10) + '/' + d.slice(5, 7);
+  let h = '<div class="card aniv"><div class="bar"><h3 style="margin:0">🎂 Aniversariantes de hoje</h3><span class="sp"></span><span class="small muted">'+(hoje.length ? hoje.length+' hoje' : 'ninguém hoje')+'</span></div>';
+  if(hoje.length){
+    h += '<p class="small muted" style="margin:4px 0 6px">O e-mail de parabéns sai automaticamente às 07:00 para quem tem e-mail cadastrado. Pelo WhatsApp, clique no botão: a mensagem já vai escrita.</p>';
+    h += hoje.map(a => {
+      const w = linkWhats(a.telefone, msg(a)), ok = anivEnviado(a.id);
+      return '<div class="it"><div class="av">'+esc(ini(a.nome))+'</div><div class="nm"><b><a href="#" onclick="go(\'pessoa\',\''+a.id+'\');return false">'+esc(a.nome)+'</a></b><span class="small muted">'+(a.idade ? a.idade+' anos' : '')+(a.empresa ? ' · '+esc(a.empresa) : '')+' · '+(a.email ? '✉ e-mail automático' : 'sem e-mail cadastrado')+'</span></div>'+
+        (w ? '<a class="btn wpp'+(ok ? ' ok' : '')+'" target="_blank" rel="noopener" href="'+esc(w)+'" onclick="anivMarcar(\''+a.id+'\',this)">'+(ok ? '✓ Enviado — enviar de novo' : 'Parabenizar no WhatsApp')+'</a>' : '<span class="small muted">sem telefone</span>')+'</div>';
+    }).join('');
+  }
+  if(prox.length) h += '<details class="num"'+(hoje.length ? '' : ' open')+'><summary>Próximos 7 dias ('+prox.length+')</summary><div class="small" style="margin-top:6px">'+prox.map(a => '<div style="padding:3px 0"><b>'+dm(a.nascimento)+'</b> · '+(a.em_dias === 1 ? 'amanhã' : 'em '+a.em_dias+' dias')+' · <a href="#" onclick="go(\'pessoa\',\''+a.id+'\');return false">'+esc(a.nome)+'</a>'+(a.idade ? ' ('+a.idade+' anos)' : '')+'</div>').join('')+'</div></details>';
+  else if(!hoje.length) h += '<p class="small muted" style="margin:6px 0 0">Nenhum aniversário nos próximos 7 dias. Para aparecer aqui, a data de nascimento precisa estar no cadastro da pessoa.</p>';
+  return h + '</div>';
 }
 // ---------- gráficos do painel (v1.10) ----------
 const fmtN = v => v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
