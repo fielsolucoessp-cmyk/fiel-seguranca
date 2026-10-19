@@ -127,7 +127,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.20.0';
+const VERSAO = '1.20.1';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -1718,7 +1718,8 @@ async function vTurma(id){
   const emp = id => id && S.empresas[id] ? S.empresas[id].nome : 'Particular';
   let h = '<div class="bar">'+btnVoltar()+'<h2 style="margin:0">'+esc(t.codigo)+' '+bdg(TST[t.status])+'</h2><span class="sp"></span>'+
     '<button class="btn sec sm" onclick="modalTurma(\''+t.id+'\')">Editar</button><button class="btn nv sm" onclick="exportarTurma()">Planilha para o GESP</button><button class="btn nv sm" onclick="pdfsTurma(this)">⬇ Documentos em PDF</button><button class="btn nv sm" onclick="listaPresenca()">Lista de presença</button>'+
-    (fechada ? '' : '<button class="btn ok sm" onclick="concluirTurma(\''+t.id+'\',this)">Concluir turma</button>')+'</div>';
+    (fechada ? '' : '<button class="btn ok sm" onclick="concluirTurma(\''+t.id+'\',this)">Concluir turma</button>')+
+    '<button class="btn dg sm" onclick="excluirTurma(\''+t.id+'\',this)">Excluir turma</button></div>';
   h += '<div class="card"><div class="kpis" style="margin:0">'+
     '<div class="kpi" style="cursor:default"><span>Curso</span><b style="font-size:18px">'+esc(t.cursos ? t.cursos.sigla : '')+'</b><span>'+esc(t.cursos ? t.cursos.nome : '')+'</span></div>'+
     '<div class="kpi" style="cursor:default"><span>Período</span><b style="font-size:18px">'+fmt(t.inicio)+' a '+fmt(t.fim)+'</b><span>'+esc(t.turno || '')+'</span></div>'+
@@ -1814,6 +1815,15 @@ async function salvarAula(id, btn){
       if(linhas.length > 1) toast(linhas.length + ' aulas lançadas.');
     }
     fecharModal(); recarregar();
+  } finally { solta(); }
+}
+async function excluirTurma(id, btn){
+  if(!confirm('EXCLUIR esta turma?\n\nSaem junto: aulas, chamadas/presenças e disciplinas da turma.\nQuem estava matriculado volta para "Aceita — aguardando turma".\nCertificados e pré-matrículas já concluídas são mantidos.\n\nEssa ação não pode ser desfeita.')) return;
+  const solta = travar(btn, 'Excluindo...');
+  try {
+    const r = await q(sb.rpc('excluir_turma', { p_turma: id }));
+    toast('Turma excluída.' + (r && r.voltaram_fila ? ' ' + r.voltaram_fila + ' aluno(s) voltaram para a fila.' : ''));
+    S.hist = []; go('turmas', null, false);
   } finally { solta(); }
 }
 async function excluirAula(id){ if(!confirm('Excluir esta aula (e a chamada dela)?')) return; await q(sb.from('aulas').delete().eq('id', id)); fecharModal(); recarregar(); }
