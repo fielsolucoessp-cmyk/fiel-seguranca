@@ -123,9 +123,10 @@ tr.click{cursor:pointer}tr.click:hover{background:#f7f9fc}
 const CONFIG = {
   SUPABASE_URL: 'https://qffqahrsmgqgxuzgrdsh.supabase.co',      // ex.: https://abcdefgh.supabase.co
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFmZnFhaHJzbWdxZ3h1emdyZHNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxODM5MTQsImV4cCI6MjEwNzc1OTkxNH0.VLJR5L7CHs5zVbNKkvkY7KEe5F-Vz_KQmoP3G2jAEI0',     // Project Settings > API > anon public
-  ESCOLA: 'rondon'                                  // identificador da escola (tabela escolas.slug)
+  ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
+  GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.17.1';
+const VERSAO = '1.17.2';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -271,7 +272,7 @@ function telaAuth(aba){
   const nomeEscola = S.escola ? S.escola.nome : '';
   const abas = aba === 'nova' ? '' : '<div class="tabs"><button class="'+(aba==='entrar'?'on':'')+'" onclick="telaAuth(\'entrar\')">Entrar</button><button class="'+(aba==='cadastro'?'on':'')+'" onclick="telaAuth(\'cadastro\')">Criar conta</button></div>';
   let corpo = '';
-  const google = (t) => '<button class="gbtn" onclick="entrarGoogle(this)"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>'+t+'</button><div class="ou">ou</div>';
+  const google = (t) => '<div id="gisBox"></div><button class="gbtn" id="gFallback" onclick="entrarGoogle(this)"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>'+t+'</button><div class="ou">ou</div>';
   if(aba === 'entrar') corpo = google('Entrar com Google')+
     '<label class="f"><span>E-mail ou CPF/CNPJ</span><input id="aEmail" autocomplete="username"></label>'+
     '<label class="f"><span>Senha</span><input id="aSenha" type="password" autocomplete="current-password" onkeydown="if(event.key===\'Enter\')fazerLogin(this)"></label>'+
@@ -300,6 +301,7 @@ function telaAuth(aba){
     '<button class="btn" style="width:100%" onclick="salvarNovaSenha(this)">Salvar nova senha</button>';
   $('#app').innerHTML = '<div class="auth"><div class="auth-box">'+logoHtml()+'<div class="brand">FIEL <b>Segurança Privada</b></div><div class="muted">'+esc(nomeEscola)+' · Portal do aluno e da empresa</div>'+abas+corpo+'<p style="text-align:center;margin:12px 0 0"><button id="btnInstalar" class="btn sec sm" onclick="instalarApp()"'+(_instalar ? ' style="display:inline-block"' : '')+'>📲 Instalar aplicativo</button></p></div></div>';
   S.tipoCad = 'aluno';
+  if(aba === 'entrar' || aba === 'cadastro') montarGoogle(aba);
 }
 function textoLgpd(tipo){
   const escola = S.escola ? S.escola.nome : 'a escola';
@@ -313,6 +315,31 @@ function tipoCad(t){
   $('#lNome').textContent = t === 'empresa' ? 'Razão social / nome da empresa' : 'Nome completo';
   $('#lDoc').textContent = t === 'empresa' ? 'CNPJ' : 'CPF';
   $('#txtLgpd').innerHTML = textoLgpd(t);
+}
+// Botão oficial do Google (a tela do Google mostra o endereço do portal, não o do Supabase).
+// No app instalado na tela inicial e se o Google não carregar, fica o botão antigo (redirecionamento).
+let _gis = null;
+function carregarGis(){
+  if(!_gis) _gis = new Promise((ok, erro) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = ok; s.onerror = () => { _gis = null; erro(); }; document.head.appendChild(s); });
+  return _gis;
+}
+async function montarGoogle(aba){
+  if(!CONFIG.GOOGLE_CLIENT_ID || window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
+  try { await carregarGis(); } catch(e){ return; }
+  const box = $('#gisBox'), fb = $('#gFallback');
+  if(!box || !fb || !(window.google && google.accounts && google.accounts.id)) return;
+  if(!window.crypto || !crypto.subtle) return;
+  const bruto = Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bruto))), b => b.toString(16).padStart(2, '0')).join('');
+  S.gNonce = bruto;
+  google.accounts.id.initialize({ client_id: CONFIG.GOOGLE_CLIENT_ID, nonce: hash, context: aba === 'cadastro' ? 'signup' : 'signin', itp_support: true, callback: r => entrarComToken(r.credential) });
+  box.style.cssText = 'display:flex;justify-content:center;margin:14px 0 4px;min-height:44px';
+  google.accounts.id.renderButton(box, { type: 'standard', theme: 'outline', size: 'large', shape: 'rectangular', text: aba === 'cadastro' ? 'signup_with' : 'signin_with', logo_alignment: 'center', locale: 'pt-BR', width: Math.max(200, Math.min(400, box.offsetWidth || 340)) });
+  fb.style.display = 'none';
+}
+async function entrarComToken(token){
+  const { error } = await sb.auth.signInWithIdToken({ provider: 'google', token, nonce: S.gNonce });
+  if(error) toast(traduzErro(error), 'erro');
 }
 async function entrarGoogle(btn){
   const solta = travar(btn, 'Abrindo o Google...');
