@@ -127,7 +127,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.19.0';
+const VERSAO = '1.20.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -1513,28 +1513,40 @@ async function baixarMeusDados(){
 /* ================= DONO DO SISTEMA (FIEL) ================= */
 async function vFiel(){
   if(!S.dono) return '<div class="card">Somente o dono do sistema acessa esta tela.</div>';
-  const l = await q(sb.rpc('painel_dono'));
+  const [l, ac] = await Promise.all([q(sb.rpc('painel_dono')), q(sb.rpc('acessos_escolas'))]);
+  S.acessos = {}; ac.forEach(a => S.acessos[a.id] = a);
   const base = location.origin + location.pathname;
   const tot = k => l.reduce((a, e) => a + Number(e[k] || 0), 0);
   let h = '<div class="bar"><h2 style="margin:0">FIEL — escolas clientes</h2><span class="sp"></span><button class="btn" onclick="modalNovaEscola()">+ Nova escola</button></div>';
   h += '<div class="kpis"><div class="kpi"><span>Escolas ativas</span><b>'+l.filter(e => e.ativa).length+' / '+l.length+'</b></div><div class="kpi"><span>Pessoas cadastradas</span><b>'+tot('pessoas')+'</b></div><div class="kpi"><span>Pré-matrículas (30 dias)</span><b>'+tot('pre_30d')+'</b></div><div class="kpi"><span>E-mails (30 dias)</span><b>'+tot('emails_30d')+'</b></div><div class="kpi"><span>E-mails hoje (limite Brevo: 300)</span><b style="color:'+(tot('emails_hoje') >= 250 ? 'var(--bad)' : tot('emails_hoje') >= 200 ? 'var(--warn)' : 'inherit')+'">'+tot('emails_hoje')+' / 300</b></div></div>'+
     (tot('emails_hoje') >= 250 ? '<div class="aviso bad">Perto do limite diário do Brevo gratuito. E-mails acima de 300 no dia ficam com erro; considere o plano pago do Brevo.</div>' : '');
+  const nT = t => ac.filter(a => a.tipo === t).length;
+  h += '<div class="secao mc">Acessos ao sistema</div><div class="kpis"><div class="kpi"><span>Administradores</span><b>'+nT('admin')+'</b></div><div class="kpi"><span>Colaboradores</span><b>'+nT('staff')+'</b></div><div class="kpi"><span>Instrutores</span><b>'+nT('instrutor')+'</b></div><div class="kpi"><span>Sem acesso há mais de 30 dias</span><b style="color:var(--warn)">'+ac.filter(a => !a.ultimo_acesso || dias(a.ultimo_acesso) < -30).length+'</b></div></div>';
+  h += '<div class="secao mc">Escolas</div>';
   h += l.map(e => {
     const link = base + '?escola=' + encodeURIComponent(e.slug), atual = S.escola && S.escola.id === e.id;
+    const eq = ac.filter(a => a.escola_id === e.id);
     return '<div class="card"><div class="bar"><h3 style="margin:0">'+esc(e.nome)+'</h3>'+(e.ativa ? '<span class="bdg ok">Ativa</span>' : '<span class="bdg bad">Bloqueada</span>')+(atual ? ' <span class="bdg nv">você está nesta</span>' : '')+'<span class="sp"></span>'+
       (atual ? '' : '<button class="btn nv sm" onclick="administrarEscola(\''+e.id+'\',this)">Administrar</button>')+
       '<button class="btn sec sm" onclick="copiarTexto(\''+esc(link)+'\')">Copiar link</button>'+
       '<button class="btn sec sm" onclick="baixarBackup(this,\''+e.id+'\',\''+esc(e.slug)+'\')">Baixar backup</button>'+
-      '<button class="btn sec sm" onclick="modalAdminEscola(\''+e.id+'\')">Definir administrador</button>'+
+      '<button class="btn sm" onclick="modalDarAcesso(\''+e.id+'\')">+ Dar acesso</button>'+
       '<button class="btn '+(e.ativa ? 'dg' : 'ok')+' sm" onclick="bloquearEscola(\''+e.id+'\','+(e.ativa ? 'false' : 'true')+')">'+(e.ativa ? 'Bloquear' : 'Desbloquear')+'</button></div>'+
       '<p class="small muted" style="margin:0 0 6px">'+esc(link)+'</p>'+
       '<div class="small">Pessoas: <b>'+e.pessoas+'</b> · Empresas: <b>'+e.empresas+'</b> · Equipe: <b>'+e.equipe+'</b> · Turmas: <b>'+e.turmas+'</b> · Documentos: <b>'+e.documentos+'</b> · Pré-matrículas 30d: <b>'+e.pre_30d+'</b> · E-mails 30d: <b>'+e.emails_30d+'</b></div>'+
-      '<div class="small muted">Administrador(es): '+esc(e.admins || 'nenhum')+' · Último acesso da equipe: '+(e.ultimo_acesso_equipe ? new Date(e.ultimo_acesso_equipe).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—')+'</div></div>';
+      '<div class="small muted">Último acesso da equipe: '+(e.ultimo_acesso_equipe ? new Date(e.ultimo_acesso_equipe).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—')+'</div>'+
+      (eq.length ? '<div class="tw" style="margin-top:10px"><table><tr><th>Nome</th><th>E-mail</th><th>Função</th><th>Módulos</th><th>Último acesso</th><th></th></tr>'+eq.map(a => {
+        const eu = a.id === S.perfil.id;
+        return '<tr><td><b>'+esc(a.nome || '—')+'</b>'+(a.eh_dono ? ' <span class="bdg nv">dono</span>' : '')+(eu ? ' <span class="bdg">você</span>' : '')+'</td><td class="small">'+esc(a.email)+'</td><td>'+
+          (eu ? esc(FUNCAO[a.tipo]) : '<select onchange="donoMudarFuncao(\''+a.id+'\',this)">'+[['admin','Administrador'],['staff','Colaborador'],['instrutor','Instrutor'],['aluno','Remover acesso']].map(([v, t]) => '<option value="'+v+'"'+(v === a.tipo ? ' selected' : '')+'>'+t+'</option>').join('')+'</select>')+'</td>'+
+          '<td class="small">'+(a.tipo === 'staff' ? (Array.isArray(a.modulos) ? a.modulos.length+' de '+MODULOS.length : 'todos')+' · <a href="#" onclick="modalModulosDono(\''+a.id+'\');return false">alterar</a>' : a.tipo === 'instrutor' ? 'aulas' : 'todos')+'</td>'+
+          '<td class="small">'+(a.ultimo_acesso ? new Date(a.ultimo_acesso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '<span class="muted">nunca</span>')+'</td><td></td></tr>';
+      }).join('')+'</table></div>' : '<div class="aviso" style="margin-top:10px">Esta escola ainda não tem ninguém com acesso. Use <b>+ Dar acesso</b> para definir o administrador.</div>')+'</div>';
   }).join('');
   const er = await sb.from('erros_cliente').select('*').order('id', { ascending: false }).limit(50);
   h += '<div class="card"><div class="bar"><h3 style="margin:0">Erros registrados no aplicativo ('+((er.data || []).length)+')</h3><span class="sp"></span><span class="small muted">últimos 50 · apagados após 90 dias</span></div>'+
     ((er.data || []).length ? '<div class="tw" style="max-height:320px;overflow:auto"><table><tr><th>Quando</th><th>Versão</th><th>Tela</th><th>Erro</th></tr>'+er.data.map(x => '<tr><td class="small" style="white-space:nowrap">'+new Date(x.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })+'</td><td class="small">'+esc(x.versao || '')+'</td><td class="small">'+esc(x.tela || '')+'</td><td class="small" title="'+esc((x.pilha || '').slice(0, 600))+'">'+esc(x.mensagem)+'<div class="muted">'+esc((x.navegador || '').replace(/^Mozilla\/5\.0 /, '').slice(0, 70))+'</div></td></tr>').join('')+'</table></div>' : '<p class="muted small">Nenhum erro registrado. 👍</p>')+'</div>';
-  h += '<p class="small muted">Para abrir uma escola: 1) "+ Nova escola"; 2) envie o link para o responsável criar a conta; 3) "Definir administrador" com o e-mail dele. Os cursos da Rondon são copiados como ponto de partida. Lembrete de backup chega toda segunda-feira por e-mail.</p>';
+  h += '<p class="small muted">Para abrir uma escola: 1) "+ Nova escola"; 2) envie o link para o responsável criar a conta; 3) "+ Dar acesso" com o e-mail dele, escolhendo Administrador. Na tabela de cada escola você troca a função, libera módulos ou remove o acesso de qualquer pessoa. Os cursos da Rondon são copiados como ponto de partida. Lembrete de backup chega toda segunda-feira por e-mail.</p>';
   return h;
 }
 function copiarTexto(t){ (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Link copiado.'), () => prompt('Copie o link:', t)); }
@@ -1555,6 +1567,43 @@ function modalAdminEscola(id){
 async function definirAdminEscola(id, btn){
   const solta = travar(btn);
   try { await q(sb.rpc('definir_admin_escola', { p_email: $('#adEmail').value, p_escola: id })); fecharModal(); toast('Administrador definido. Ele precisa sair e entrar de novo.'); recarregar(); } finally { solta(); }
+}
+async function donoMudarFuncao(id, sel){
+  const a = S.acessos[id], tipo = sel.value;
+  const txt = { admin: 'Tornar ADMINISTRADOR da escola', staff: 'Tornar COLABORADOR (depois escolha os módulos)', instrutor: 'Tornar INSTRUTOR (só aulas)', aluno: 'REMOVER o acesso desta pessoa ao painel da escola' }[tipo];
+  if(!confirm(txt + ': ' + (a.nome || a.email) + '?')){ sel.value = a.tipo; return; }
+  try { await q(sb.rpc('dono_definir_acesso', { p_perfil: id, p_tipo: tipo, p_modulos: tipo === 'staff' ? a.modulos : null })); toast('Acesso atualizado. A pessoa precisa sair e entrar de novo.'); recarregar(); }
+  catch(e){ sel.value = a.tipo; }
+}
+function modalModulosDono(id){
+  const a = S.acessos[id]; if(!a) return;
+  const tem = k => !Array.isArray(a.modulos) || a.modulos.includes(k);
+  abrirModal('Módulos de '+(a.nome || a.email),
+    '<p class="small muted" style="margin-top:0">Os módulos desmarcados somem do menu do colaborador, e o sistema bloqueia as alterações neles.</p>'+
+    '<div class="fgrid">'+MODULOS.map(([k, l]) => '<label class="chk" style="font-size:14px"><input type="checkbox" class="selMod" value="'+k+'"'+(tem(k) ? ' checked' : '')+'> <span>'+l+'</span></label>').join('')+'</div>',
+    '<button class="btn" onclick="salvarModulosDono(\''+id+'\',this)">Salvar</button>');
+}
+async function salvarModulosDono(id, btn){
+  const sel = [...document.querySelectorAll('.selMod:checked')].map(c => c.value);
+  if(!sel.length) return toast('Marque pelo menos um módulo (ou remova o acesso da pessoa).', 'erro');
+  const solta = travar(btn);
+  try { await q(sb.rpc('dono_definir_acesso', { p_perfil: id, p_tipo: 'staff', p_modulos: sel.length === MODULOS.length ? null : sel })); fecharModal(); toast('Módulos atualizados.'); recarregar(); } finally { solta(); }
+}
+function modalDarAcesso(escolaId){
+  S.daEscola = escolaId;
+  abrirModal('Dar acesso à escola',
+    '<p class="small muted" style="margin-top:0">A pessoa precisa ter criado a conta pelo link da escola. Busque pelo e-mail que ela usou.</p>'+
+    '<div class="bar"><input id="daEmail" type="email" placeholder="e-mail" style="flex:1" onkeydown="if(event.key===\'Enter\')buscarDarAcesso()"><button class="btn nv" onclick="buscarDarAcesso()">Buscar</button></div><div id="daRes"></div>', '');
+}
+async function buscarDarAcesso(){
+  const r = await q(sb.rpc('dono_buscar_usuario', { p_email: $('#daEmail').value }));
+  $('#daRes').innerHTML = r.length ? r.map(u => '<div class="aviso" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div style="flex:1"><b>'+esc(u.nome || '—')+'</b> · '+esc(u.email)+'<div class="small muted">hoje: '+esc(FUNCAO[u.tipo] || u.tipo)+'</div></div>'+
+    [['admin','Administrador'],['staff','Colaborador'],['instrutor','Instrutor']].map(([t, l]) => '<button class="btn sm '+(t === 'admin' ? 'nv' : 'sec')+'" onclick="darAcesso(\''+u.id+'\',\''+t+'\',this)">'+l+'</button>').join('')+'</div>').join('')
+    : '<div class="aviso bad">Nenhuma conta com esse e-mail. Peça para a pessoa criar a conta pelo link da escola.</div>';
+}
+async function darAcesso(id, tipo, btn){
+  const solta = travar(btn);
+  try { await q(sb.rpc('dono_definir_acesso', { p_perfil: id, p_tipo: tipo, p_modulos: null, p_escola: S.daEscola })); fecharModal(); toast('Acesso liberado. A pessoa precisa sair e entrar de novo.'); recarregar(); } finally { solta(); }
 }
 async function bloquearEscola(id, ativa){
   if(!confirm(ativa ? 'Desbloquear esta escola?' : 'Bloquear esta escola? A equipe, os alunos e as empresas perdem o acesso e os e-mails automáticos param. Os dados são mantidos.')) return;
