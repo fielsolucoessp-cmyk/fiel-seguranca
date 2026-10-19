@@ -127,7 +127,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.18.0';
+const VERSAO = '1.19.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -260,7 +260,7 @@ async function entrar(sessao){
     if(staff()) await carregarInstrutores();
     if(perfil.tipo === 'aluno'){ const p = await q(sb.from('pessoas').select('id').eq('usuario_id', perfil.id).limit(1)); S.minhaPessoa = p[0] ? p[0].id : null; }
     S.hist = [];
-    if(staff()) go('painel', null, false);
+    if(staff()){ const m1 = MODULOS.find(([k]) => podeModulo(k)); go(m1 ? m1[0] : 'semacesso', null, false); }
     else if(perfil.tipo === 'empresa') go('einicio', null, false);
     else if(perfil.tipo === 'instrutor') go('aulas', null, false);
     else go('inicio', null, false);
@@ -436,10 +436,13 @@ async function salvarNovaSenha(btn){
 }
 
 /* ================= NAVEGAÇÃO ================= */
+const MODULOS = [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']];
+// colaborador (staff) vê só os módulos liberados; administrador e dono veem tudo
+const podeModulo = k => !S.perfil || S.perfil.tipo !== 'staff' || S.dono || !Array.isArray(S.perfil.modulos) || S.perfil.modulos.includes(k);
 function menu(){
   const dono = S.dono ? [['fiel','FIEL']] : [];
   if(S.perfil.tipo === 'instrutor') return [['aulas','Minhas aulas']];
-  if(staff()) return [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']].concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : [], dono);
+  if(staff()) return MODULOS.filter(([k]) => podeModulo(k)).concat(S.perfil.tipo === 'admin' ? [['equipe','Equipe']] : [], dono);
   if(S.dono) return dono;
   if(S.perfil.tipo === 'empresa') return [['einicio','Início'],['vigilantes','Vigilantes'],['vencimentos','Vencimentos'],['conta','Dados da empresa']];
   const bg = S.badges || {}, n = k => bg[k] ? ' ('+bg[k]+')' : '';
@@ -456,6 +459,7 @@ function desenharMenu(){
 function irMenu(k){ S.hist = []; go(k, k === 'pessoa' ? S.minhaPessoa : null, false); }
 async function go(view, param, empilhar = true){
   if(empilhar && S.view) S.hist.push([S.view, S.param]);
+  if(staff() && MODULOS.some(([k]) => k === view) && !podeModulo(view)) view = 'semacesso';
   S.view = view; S.param = param;
   moldura(); desenharMenu();
   $('#main').innerHTML = '<p class="muted">Carregando...</p>';
@@ -2002,14 +2006,15 @@ function listaPresenca(aulaId){
     '<table><tr><th style="width:30px">Nº</th><th>Nome</th><th style="width:120px">CPF</th><th style="width:240px">Assinatura</th></tr>'+mats.map((m, i) => '<tr><td>'+(i + 1)+'</td><td>'+esc(m.pessoas ? m.pessoas.nome : '')+'</td><td>'+fmtDoc(m.pessoas ? m.pessoas.cpf : '')+'</td><td></td></tr>').join('')+'</table></body></html>');
 }
 
-const FUNCAO = { admin: 'Administrador', staff: 'Equipe da escola', instrutor: 'Instrutor', aluno: 'Aluno', empresa: 'Empresa' };
+const FUNCAO = { admin: 'Administrador', staff: 'Colaborador', instrutor: 'Instrutor', aluno: 'Aluno', empresa: 'Empresa' };
 async function vEquipe(){
   if(S.perfil.tipo !== 'admin') return '<div class="card">Somente o administrador acessa esta tela.</div>';
-  const lista = await q(sb.from('perfis').select('id,nome,email,tipo').eq('escola_id', S.perfil.escola_id).in('tipo', ['staff','admin','instrutor']).order('nome'));
-  return '<h2>Equipe da escola</h2><div class="card"><div class="tw"><table><tr><th>Nome</th><th>E-mail</th><th>Função</th><th></th></tr>'+lista.map(u => '<tr><td><b>'+esc(u.nome || '—')+'</b>'+(u.id === S.perfil.id ? ' <span class="bdg nv">você</span>' : '')+'</td><td>'+esc(u.email)+'</td><td>'+esc(FUNCAO[u.tipo])+'</td><td class="acoes">'+(u.id === S.perfil.id ? '' :
+  const lista = await q(sb.from('perfis').select('id,nome,email,tipo,modulos').eq('escola_id', S.perfil.escola_id).in('tipo', ['staff','admin','instrutor']).order('nome'));
+  S.equipe = {}; lista.forEach(u => S.equipe[u.id] = u);
+  return '<h2>Equipe da escola</h2><div class="card"><div class="tw"><table><tr><th>Nome</th><th>E-mail</th><th>Função</th><th></th></tr>'+lista.map(u => '<tr><td><b>'+esc(u.nome || '—')+'</b>'+(u.id === S.perfil.id ? ' <span class="bdg nv">você</span>' : '')+'</td><td>'+esc(u.email)+'</td><td>'+esc(FUNCAO[u.tipo])+(u.tipo === 'staff' ? '<div class="small muted">'+(Array.isArray(u.modulos) ? u.modulos.length+' de '+MODULOS.length+' módulos' : 'todos os módulos')+' · <a href="#" onclick="modalModulos(\''+u.id+'\');return false">alterar</a></div>' : '')+'</td><td class="acoes">'+(u.id === S.perfil.id ? '' :
     ['staff','admin','instrutor'].filter(t => t !== u.tipo).map(t => '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\''+t+'\')">Tornar '+FUNCAO[t].toLowerCase()+'</button> ').join('')+
     '<button class="btn dg sm" onclick="definirFuncao(\''+u.id+'\',\'aluno\')">Remover acesso</button>')+'</td></tr>').join('')+'</table></div>'+
-    '<p class="small muted"><b>Administrador</b> faz tudo, inclusive gerenciar a equipe. <b>Equipe da escola</b> analisa documentos, pré-matrículas, cursos e vencimentos. <b>Instrutor</b> só vê as aulas: faz a chamada e marca as horas dadas e a conclusão da disciplina.</p></div>'+
+    '<p class="small muted"><b>Administrador</b> faz tudo na escola, inclusive gerenciar a equipe. <b>Colaborador</b> usa só os módulos que o administrador liberar (clique em "alterar"). <b>Instrutor</b> só vê as aulas: faz a chamada e marca as horas dadas e a conclusão da disciplina.</p></div>'+
     '<div class="card"><h3>Adicionar pessoa à equipe</h3><p class="small muted" style="margin-top:0">1. Peça para a pessoa criar uma conta pelo link do portal (Painel → Link do portal).<br>2. Busque pelo e-mail que ela usou e defina a função.</p>'+
     '<div class="bar"><input id="eqEmail" type="email" placeholder="e-mail da pessoa" style="flex:1" onkeydown="if(event.key===\'Enter\')buscarEquipe()"><button class="btn nv" onclick="buscarEquipe()">Buscar</button></div><div id="eqRes"></div></div>';
 }
@@ -2018,19 +2023,36 @@ async function buscarEquipe(){
   if(!e) return;
   const r = await q(sb.from('perfis').select('id,nome,email,tipo').eq('escola_id', S.perfil.escola_id).ilike('email', e).limit(5));
   $('#eqRes').innerHTML = r.length ? r.map(u => '<div class="aviso" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div style="flex:1"><b>'+esc(u.nome || '—')+'</b> · '+esc(u.email)+' · hoje: '+esc(FUNCAO[u.tipo])+'</div>'+(u.id === S.perfil.id ? '' :
-    (u.tipo !== 'instrutor' ? '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\'instrutor\')">Tornar instrutor</button>' : '')+(u.tipo !== 'staff' ? '<button class="btn sm" onclick="definirFuncao(\''+u.id+'\',\'staff\')">Tornar equipe</button>' : '')+(u.tipo !== 'admin' ? '<button class="btn nv sm" onclick="definirFuncao(\''+u.id+'\',\'admin\')">Tornar administrador</button>' : ''))+'</div>').join('')
+    (u.tipo !== 'instrutor' ? '<button class="btn sec sm" onclick="definirFuncao(\''+u.id+'\',\'instrutor\')">Tornar instrutor</button>' : '')+(u.tipo !== 'staff' ? '<button class="btn sm" onclick="definirFuncao(\''+u.id+'\',\'staff\')">Tornar colaborador</button>' : '')+(u.tipo !== 'admin' ? '<button class="btn nv sm" onclick="definirFuncao(\''+u.id+'\',\'admin\')">Tornar administrador</button>' : ''))+'</div>').join('')
     : '<div class="aviso bad">Nenhuma conta com esse e-mail nesta escola. Confira o e-mail ou peça para a pessoa criar a conta pelo link do portal.</div>';
+}
+function modalModulos(id){
+  const u = S.equipe[id]; if(!u) return;
+  const tem = k => !Array.isArray(u.modulos) || u.modulos.includes(k);
+  abrirModal('Módulos de '+(u.nome || u.email),
+    '<p class="small muted" style="margin-top:0">Marque o que este colaborador pode usar. Os módulos desmarcados somem do menu dele, e o sistema também bloqueia as alterações nesses módulos.</p>'+
+    '<div class="fgrid">'+MODULOS.map(([k, l]) => '<label class="chk" style="font-size:14px"><input type="checkbox" class="selMod" value="'+k+'"'+(tem(k) ? ' checked' : '')+'> <span>'+l+'</span></label>').join('')+'</div>',
+    '<button class="btn" onclick="salvarModulos(\''+id+'\',this)">Salvar</button>');
+}
+async function salvarModulos(id, btn){
+  const sel = [...document.querySelectorAll('.selMod:checked')].map(c => c.value);
+  if(!sel.length) return toast('Marque pelo menos um módulo (ou remova o acesso da pessoa).', 'erro');
+  const solta = travar(btn);
+  try {
+    await q(sb.from('perfis').update({ modulos: sel.length === MODULOS.length ? null : sel }).eq('id', id));
+    fecharModal(); toast('Módulos atualizados. A pessoa precisa sair e entrar de novo.'); recarregar();
+  } finally { solta(); }
 }
 async function definirFuncao(id, tipo){
   if(id === S.perfil.id) return toast('Você não pode alterar a sua própria função.', 'erro');
-  const msg = { admin: 'Dar acesso de ADMINISTRADOR a esta pessoa?', staff: 'Dar acesso de EQUIPE DA ESCOLA a esta pessoa?', instrutor: 'Dar acesso de INSTRUTOR a esta pessoa? Ela verá as aulas e poderá fazer a chamada.', aluno: 'Remover o acesso desta pessoa ao painel da escola? A conta continua existindo como aluno.' }[tipo];
+  const msg = { admin: 'Dar acesso de ADMINISTRADOR a esta pessoa?', staff: 'Dar acesso de COLABORADOR a esta pessoa? Depois, em "alterar", escolha os módulos que ela pode usar.', instrutor: 'Dar acesso de INSTRUTOR a esta pessoa? Ela verá as aulas e poderá fazer a chamada.', aluno: 'Remover o acesso desta pessoa ao painel da escola? A conta continua existindo como aluno.' }[tipo];
   if(!confirm(msg)) return;
   await q(sb.from('perfis').update({ tipo }).eq('id', id));
   await carregarInstrutores();
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), andamento: () => vPessoa(S.minhaPessoa, 'andamento'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), einicio: vEmpresaInicio, dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { semacesso: async () => '<div class="card"><h3>Sem acesso a este módulo</h3><p class="muted">Peça ao administrador da escola para liberar este módulo para você (menu Equipe).</p></div>', inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), andamento: () => vPessoa(S.minhaPessoa, 'andamento'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), einicio: vEmpresaInicio, dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
