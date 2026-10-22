@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.24.1';
+const VERSAO = '1.25.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -1803,17 +1803,36 @@ async function modalCertAvulso(id){
   await carregarCursos();
   if(!S.certPessoas) S.certPessoas = await buscarTodos(() => sb.from('pessoas').select('id,nome,cpf').eq('escola_id', S.perfil.escola_id).order('nome'));
   const c = id ? S.certAv.find(x => x.id === id) : {}, v = k => esc(c[k] ?? '');
-  const p = c.pessoa_id ? S.certPessoas.find(x => x.id === c.pessoa_id) : null;
+  const p = c.pessoa_id ? S.certPessoas.find(x => x.id === c.pessoa_id) : null, comNota = c.com_nota !== false;
   abrirModal(id ? 'Editar certificado avulso nº ' + numCert(c) : 'Certificado avulso', '<p class="small muted" style="margin-top:0">Para alunos que não estão numa turma concluída no sistema (turmas antigas, cursos feitos antes do sistema, casos especiais). Recebe número na sequência dos demais certificados.</p><div class="fgrid">'+
     '<label class="f w"><span>Aluno já cadastrado (opcional — preenche nome e CPF)</span><input id="caPes" list="caPessoas" placeholder="Digite o nome ou CPF" value="'+esc(p ? p.nome + ' — ' + fmtCpf(p.cpf) : '')+'" onchange="caEscolhePessoa(this.value)"><datalist id="caPessoas">'+S.certPessoas.map(x => '<option value="'+esc(x.nome + ' — ' + fmtCpf(x.cpf))+'">').join('')+'</datalist></label>'+
     '<label class="f"><span>Nome completo *</span><input id="caNome" value="'+v('nome')+'"></label><label class="f"><span>CPF</span><input id="caCpf" inputmode="numeric" value="'+esc(fmtCpf(c.cpf))+'"></label>'+
-    '<label class="f w"><span>Curso</span><select id="caCurso" onchange="caEscolheCurso(this.value)"><option value="">Outro curso (digitar abaixo)</option>'+S.cursos.filter(x => x.ativo || x.id === c.curso_id).map(x => '<option value="'+x.id+'"'+(x.id === c.curso_id ? ' selected' : '')+'>'+esc(nomeCurso(x))+'</option>').join('')+'</select></label>'+
+    '<label class="f w"><span>Curso cadastrado (preenche o curso e as disciplinas)</span><select id="caCurso" onchange="caEscolheCurso(this.value)"><option value="">Outro curso (digitar abaixo)</option>'+S.cursos.filter(x => x.ativo || x.id === c.curso_id).map(x => '<option value="'+x.id+'"'+(x.id === c.curso_id ? ' selected' : '')+'>'+esc(nomeCurso(x))+'</option>').join('')+'</select></label>'+
     '<label class="f"><span>Nome do curso no certificado *</span><input id="caCNome" value="'+v('curso_nome')+'" placeholder="Ex.: Curso de Formação de Vigilante"></label><label class="f"><span>Sigla</span><input id="caSigla" value="'+v('curso_sigla')+'" placeholder="Ex.: CFV"></label>'+
-    '<label class="f"><span>Carga horária (horas-aula)</span><input id="caCarga" inputmode="decimal" value="'+esc(c.carga_horaria ? String(c.carga_horaria).replace('.', ',') : '')+'"></label>'+
-    '<label class="f"><span>Início do curso</span><input id="caIni" type="date" value="'+v('data_inicio')+'"></label><label class="f"><span>Conclusão *</span><input id="caFim" type="date" value="'+esc(c.data_fim || hojeISO())+'"></label>'+
-    '<label class="f"><span>Frequência (%)</span><input id="caFreq" inputmode="decimal" value="'+esc(c.frequencia != null ? String(c.frequencia).replace('.', ',') : '100')+'"></label><label class="f"><span>Média final</span><input id="caNota" inputmode="decimal" value="'+esc(c.nota != null ? String(c.nota).replace('.', ',') : '')+'"></label></div>'+
-    '<p class="small muted" style="margin:0">Se escolher um curso cadastrado, o verso traz as disciplinas desse curso. Em "Outro curso", o certificado sai só com a frente.</p>',
+    '<label class="f"><span>Início do curso</span><input id="caIni" type="date" value="'+v('data_inicio')+'"></label><label class="f"><span>Conclusão *</span><input id="caFim" type="date" value="'+esc(c.data_fim || hojeISO())+'"></label></div>'+
+    '<div class="secao">Disciplinas ministradas</div>'+
+    '<div class="bar" style="margin:0 0 6px"><label class="chk" style="font-size:14px"><input type="checkbox" id="caComNota"'+(comNota ? ' checked' : '')+' onchange="caTrocaNota()"> <span>Apresentar notas no certificado</span></label></div>'+
+    '<div class="tw"><table id="caDisc"><tr><th>Disciplina</th><th style="width:90px">Carga (h/a)</th><th class="caN" style="width:90px">Nota</th><th style="width:40px"></th></tr>'+(c.disciplinas || []).map(caLinhaDisc).join('')+'</table></div>'+
+    '<div class="bar" style="margin:6px 0 10px"><button class="btn sec sm" onclick="caAddDisc()">+ Adicionar disciplina</button><span class="small muted">Edite nomes, cargas e notas à vontade. As disciplinas saem no verso do certificado.</span></div>'+
+    '<div class="fgrid"><label class="f"><span>Carga horária total (h/a)</span><input id="caCarga" inputmode="decimal" value="'+esc(c.carga_horaria ? String(c.carga_horaria).replace('.', ',') : '')+'"></label>'+
+    '<label class="f"><span>Frequência (%)</span><input id="caFreq" inputmode="decimal" value="'+esc(c.frequencia != null ? String(c.frequencia).replace('.', ',') : '100')+'"></label>'+
+    '<label class="f caN"><span>Média final</span><input id="caNota" inputmode="decimal" value="'+esc(c.nota != null ? String(c.nota).replace('.', ',') : '')+'"></label></div>'+
+    '<p class="small muted" style="margin:0">A carga total e a média são calculadas pelas disciplinas, mas podem ser alteradas. Sem disciplinas, o certificado sai só com a frente.</p>',
     (id ? '<button class="btn sec" onclick="salvarCertAvulso(\''+id+'\',this,false)">Salvar</button>' : '')+'<button class="btn" onclick="salvarCertAvulso(\''+(id || '')+'\',this,true)">'+(id ? 'Salvar e reimprimir' : 'Emitir certificado')+'</button>');
+  caTrocaNota();
+}
+const caLinhaDisc = d => '<tr class="caL" data-semnota="'+(d && d.sem_nota ? 1 : '')+'"><td><input class="caDN" value="'+esc(d ? d.nome : '')+'" placeholder="Nome da disciplina"></td><td><input class="caDC" inputmode="decimal" value="'+esc(d && d.carga != null ? String(d.carga).replace('.', ',') : '')+'" oninput="caSomar()"></td>'+
+  '<td class="caN"><input class="caDNo" inputmode="decimal" value="'+esc(d && d.nota != null ? String(d.nota).replace('.', ',') : '')+'" placeholder="'+(d && d.sem_nota ? 'Apto' : '0 a 10')+'" oninput="caSomar()"></td><td><button class="btn dg sm" title="Remover" onclick="this.closest(\'tr\').remove();caSomar()">✕</button></td></tr>';
+function caAddDisc(){ $('#caDisc tbody').insertAdjacentHTML('beforeend', caLinhaDisc(null)); caTrocaNota(); }
+function caTrocaNota(){ const on = $('#caComNota') && $('#caComNota').checked; document.querySelectorAll('#modal .caN').forEach(e => e.style.display = on ? '' : 'none'); }
+function caLerDisc(){
+  return [...document.querySelectorAll('#caDisc tr.caL')].map(tr => { const n = tr.querySelector('.caDN').value.trim(), cg = tr.querySelector('.caDC').value.trim(), no = tr.querySelector('.caDNo').value.trim();
+    return { nome: n, carga: cg ? lerValor(cg) : null, nota: no ? lerValor(no) : null, sem_nota: !!tr.dataset.semnota }; }).filter(d => d.nome);
+}
+function caSomar(){
+  const ds = caLerDisc(), tot = ds.reduce((a, d) => a + (Number(d.carga) || 0), 0), ns = ds.filter(d => d.nota != null && !isNaN(d.nota));
+  if(tot) $('#caCarga').value = String(Math.round(tot * 10) / 10).replace('.', ',');
+  if(ns.length) $('#caNota').value = (Math.round(10 * ns.reduce((a, d) => a + d.nota, 0) / ns.length) / 10).toFixed(1).replace('.', ',');
 }
 function caEscolhePessoa(val){
   const p = (S.certPessoas || []).find(x => x.nome + ' — ' + fmtCpf(x.cpf) === val);
@@ -1822,9 +1841,12 @@ function caEscolhePessoa(val){
 async function caEscolheCurso(cid){
   const cu = S.cursos.find(x => x.id === cid); if(!cu) return;
   $('#caCNome').value = cu.nome; $('#caSigla').value = cu.sigla || '';
-  const d = await q(sb.from('disciplinas').select('carga_horas').eq('curso_id', cid));
-  const t = d.reduce((a, x) => a + Number(x.carga_horas || 0), 0) || cu.carga_horas || '';
-  if(t) $('#caCarga').value = String(t).replace('.', ',');
+  const d = await q(sb.from('disciplinas').select('nome,carga_horas,ordem,sem_nota').eq('curso_id', cid).order('ordem'));
+  if(d.length && (!caLerDisc().length || confirm('Trocar as disciplinas da lista pelas do curso ' + cu.sigla + '?'))){
+    document.querySelectorAll('#caDisc tr.caL').forEach(tr => tr.remove());
+    $('#caDisc tbody').insertAdjacentHTML('beforeend', d.map(x => caLinhaDisc({ nome: x.nome, carga: x.carga_horas, nota: null, sem_nota: x.sem_nota })).join(''));
+    caTrocaNota(); caSomar();
+  }
 }
 async function salvarCertAvulso(id, btn, imprimir){
   const nome = $('#caNome').value.trim(), curso_nome = $('#caCNome').value.trim(), fim = $('#caFim').value, cpf = soDig($('#caCpf').value);
@@ -1834,10 +1856,12 @@ async function salvarCertAvulso(id, btn, imprimir){
   if(cpf && cpf.length !== 11) return toast('CPF incompleto.', 'erro');
   const num = s => { s = $(s).value.trim(); return s ? lerValor(s) : null; };
   const ini = $('#caIni').value || null; if(ini && ini > fim) return toast('O início não pode ser depois da conclusão.', 'erro');
+  const comNota = $('#caComNota').checked, disciplinas = caLerDisc();
+  if(comNota && disciplinas.some(d => d.nota != null && (isNaN(d.nota) || d.nota < 0 || d.nota > 10))) return toast('As notas devem ficar entre 0 e 10.', 'erro');
   const pSel = (S.certPessoas || []).find(x => x.nome + ' — ' + fmtCpf(x.cpf) === $('#caPes').value);
   const pes = pSel || (cpf ? (S.certPessoas || []).find(x => soDig(x.cpf) === cpf) : null);
   const dados = { nome, cpf: cpf || null, pessoa_id: pes ? pes.id : null, curso_id: $('#caCurso').value || null, curso_nome, curso_sigla: $('#caSigla').value.trim() || null,
-    carga_horaria: num('#caCarga'), data_inicio: ini, data_fim: fim, frequencia: num('#caFreq'), nota: num('#caNota') };
+    carga_horaria: num('#caCarga'), data_inicio: ini, data_fim: fim, frequencia: num('#caFreq'), nota: comNota ? num('#caNota') : null, com_nota: comNota, disciplinas };
   const solta = travar(btn, imprimir ? 'Gerando...' : null);
   try {
     let c;
@@ -1855,8 +1879,10 @@ async function imprimirAvulso(id, btn){
 }
 async function pdfAvulso(c, reimpressao){
   if(reimpressao) await sb.from('certificados').update({ emissoes: (c.emissoes || 1) + 1, ultima_emissao: new Date().toISOString() }).eq('id', c.id);
-  const disc = c.curso_id ? await q(sb.from('disciplinas').select('id,curso_id,nome,carga_horas,ordem,sem_nota').eq('curso_id', c.curso_id).order('ordem')) : [];
-  await pdfCertificados([{ c, s: { pessoas: { nome: c.nome, cpf: c.cpf }, cursos: { sigla: c.curso_sigla, nome: c.curso_nome }, turmas: { inicio: c.data_inicio, fim: c.data_fim }, frequencia: c.frequencia, nota: c.nota }, disc, notas: {}, carga: c.carga_horaria }],
+  let disc, notas = {};
+  if(Array.isArray(c.disciplinas)){ disc = c.disciplinas.map((d, i) => ({ id: 'a' + i, nome: d.nome, carga_horas: d.carga, sem_nota: d.sem_nota && d.nota == null })); c.disciplinas.forEach((d, i) => { if(d.nota != null) notas['a' + i] = d.nota; }); }
+  else disc = c.curso_id ? await q(sb.from('disciplinas').select('id,curso_id,nome,carga_horas,ordem,sem_nota').eq('curso_id', c.curso_id).order('ordem')) : [];
+  await pdfCertificados([{ c, s: { pessoas: { nome: c.nome, cpf: c.cpf }, cursos: { sigla: c.curso_sigla, nome: c.curso_nome }, turmas: { inicio: c.data_inicio, fim: c.data_fim }, frequencia: c.frequencia, nota: c.nota }, disc, notas, carga: c.carga_horaria, semNota: c.com_nota === false, verso: Array.isArray(c.disciplinas) }],
     'certificado-' + numCert(c).replace('/', '-') + '-' + semAcento(c.nome));
 }
 const semAcento = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().replace(/^-|-$/g, '').slice(0, 40);
@@ -1907,7 +1933,7 @@ async function pdfCertificados(itens, nomeArq){
     doc.setFontSize(8.5); doc.setTextColor(95, 92, 88);
     doc.text('Certificado nº ' + numCert(c), 18, H - 15);
     if(c.registro_pf) doc.text('Registro na Polícia Federal nº ' + c.registro_pf, W - 18, H - 15, { align: 'right' });
-    if(!cfg.verso || !it.disc.length) return;
+    if(!(cfg.verso || it.verso) || !it.disc.length) return;
     // VERSO
     doc.addPage('a4', 'landscape'); moldura();
     doc.setTextColor(...cor); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('HISTÓRICO DO CURSO', W / 2, 24, { align: 'center', charSpace: 1 });
@@ -1916,9 +1942,9 @@ async function pdfCertificados(itens, nomeArq){
     const nf = v => v === null || v === undefined ? '—' : Number(v).toFixed(1).replace('.', ',');
     doc.autoTable({
       startY: 42, margin: { left: 30, right: 30 }, theme: 'grid',
-      head: [['Disciplina', 'Carga horária', 'Nota']],
-      body: it.disc.map(d => [d.nome, String(Number(d.carga_horas || 0)).replace('.', ',') + ' h/a', d.sem_nota ? 'Apto' : nf(it.notas[d.id])]),
-      foot: [['Total', String(carga).replace('.', ',') + ' h/a', 'Média ' + nf(s.nota)]],
+      head: [['Disciplina', 'Carga horária'].concat(it.semNota ? [] : ['Nota'])],
+      body: it.disc.map(d => [d.nome, String(Number(d.carga_horas || 0)).replace('.', ',') + ' h/a'].concat(it.semNota ? [] : [d.sem_nota ? 'Apto' : nf(it.notas[d.id])])),
+      foot: [['Total', String(carga).replace('.', ',') + ' h/a'].concat(it.semNota ? [] : ['Média ' + nf(s.nota)])],
       styles: { fontSize: it.disc.length > 14 ? 8 : 9, cellPadding: it.disc.length > 14 ? 1.4 : 2.2, textColor: [28, 28, 28], lineColor: [210, 205, 195], lineWidth: 0.2 },
       headStyles: { fillColor: cor, textColor: 255 }, footStyles: { fillColor: [243, 242, 239], textColor: [28, 28, 28], fontStyle: 'bold' },
       columnStyles: { 1: { halign: 'center', cellWidth: 34 }, 2: { halign: 'center', cellWidth: 30 } }
