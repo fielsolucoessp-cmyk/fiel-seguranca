@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.23.0';
+const VERSAO = '1.24.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -1165,7 +1165,7 @@ const CAT_PADRAO = {
   ]
 };
 const FORMAS_PG = ['Pix','Dinheiro','Cartão de crédito','Cartão de débito','Boleto','Transferência'];
-const FIN_ABAS = [['resumo','Resumo'],['receber','A receber'],['pagar','A pagar'],['fluxo','Fluxo de caixa'],['analise','Análises'],['cadastros','Categorias e contas']];
+const FIN_ABAS = [['resumo','Resumo'],['receber','A receber'],['pagar','A pagar'],['fluxo','Fluxo de caixa'],['analise','Análises'],['fornecedores','Fornecedores'],['cadastros','Categorias e contas']];
 const addMesFixo = (iso, n) => { const [a, m, d] = iso.split('-').map(Number); const ult = new Date(a, m - 1 + n + 1, 0).getDate(); return isoDe(new Date(a, m - 1 + n, Math.min(d, ult))); };
 const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const lerValor = s => { s = String(s || '').replace(/[^\d,.-]/g, ''); if(s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); return Math.round(Number(s) * 100) / 100; };
@@ -1184,6 +1184,8 @@ async function carregarFinBase(){
   }
   if(!contas.length) contas = await q(sb.from('fin_contas').insert([{ escola_id: eid, nome: 'Caixa (dinheiro)' }, { escola_id: eid, nome: 'Banco' }]).select());
   S.finCats = cats; S.finContas = contas;
+  S.finForn = await q(sb.from('fornecedores').select('*').eq('escola_id', eid).order('nome'));
+  if(!S.empresas) await carregarEmpresas();
   await carregarCursos();
 }
 const grupoDe = l => { if(l.tipo === 'receita' && l.curso_id) return 'Cursos'; const c = (S.finCats || []).find(x => x.tipo === l.tipo && x.nome === l.categoria); return c ? c.grupo || 'Outras' : 'Sem categoria'; };
@@ -1192,7 +1194,7 @@ async function vFinanceiro(){
   S.finAba = S.finAba || 'resumo';
   let h = '<div class="bar"><h2 style="margin:0">Financeiro</h2><span class="sp"></span><button class="btn ok" onclick="modalLanc(\'receita\')">+ Receita</button><button class="btn dg" onclick="modalLanc(\'despesa\')">+ Despesa</button></div>';
   h += '<div class="tabs" style="flex-wrap:wrap">'+FIN_ABAS.map(([k, l]) => '<button class="'+(S.finAba === k ? 'on' : '')+'" onclick="S.finAba=\''+k+'\';recarregar()">'+l+'</button>').join('')+'</div>';
-  const f = { resumo: finResumo, receber: () => finAbertos('receita'), pagar: () => finAbertos('despesa'), fluxo: finFluxo, analise: finAnalise, cadastros: finCadastros }[S.finAba] || finResumo;
+  const f = { resumo: finResumo, receber: () => finAbertos('receita'), pagar: () => finAbertos('despesa'), fluxo: finFluxo, analise: finAnalise, fornecedores: finFornecedores, cadastros: finCadastros }[S.finAba] || finResumo;
   return h + await f();
 }
 // saldo atual de cada conta = saldo inicial + recebido − pago
@@ -1202,9 +1204,16 @@ async function saldosContas(){
   pagos.forEach(p => { const v = (p.tipo === 'receita' ? 1 : -1) * Number(p.valor); if(p.conta_id && s[p.conta_id] !== undefined) s[p.conta_id] += v; else semConta += v; });
   return { s, semConta, total: Object.values(s).reduce((a, v) => a + v, 0) + semConta };
 }
+// quem é a outra parte do lançamento: aluno, empresa parceira ou fornecedor
+const parteLanc = l => {
+  if(l.pessoas) return 'Aluno: ' + l.pessoas.nome;
+  if(l.empresa_id){ const e = (S.empresas || {})[l.empresa_id]; return 'Empresa: ' + (e ? e.nome : '—'); }
+  if(l.fornecedor_id){ const f = (S.finForn || []).find(x => x.id === l.fornecedor_id); return 'Fornecedor: ' + (f ? f.nome : '—'); }
+  return '';
+};
 const linhaLanc = (l, mostrarData) => {
-  const [c, t] = situacaoLanc(l), conta = (S.finContas || []).find(x => x.id === l.conta_id);
-  return '<tr><td style="white-space:nowrap">'+fmt(l.vencimento)+'</td><td><b>'+esc(l.descricao)+'</b>'+(l.parcela ? ' <span class="small muted">'+esc(l.parcela)+'</span>' : '')+(l.pessoas ? '<div class="small muted">'+esc(l.pessoas.nome)+'</div>' : '')+(l.obs ? '<div class="small muted">'+esc(l.obs)+'</div>' : '')+'</td><td class="small">'+esc(l.categoria || '—')+'<div class="muted">'+esc(grupoDe(l))+'</div></td>'+
+  const [c, t] = situacaoLanc(l), conta = (S.finContas || []).find(x => x.id === l.conta_id), parte = parteLanc(l);
+  return '<tr><td style="white-space:nowrap">'+fmt(l.vencimento)+'</td><td><b>'+esc(l.descricao)+'</b>'+(l.parcela ? ' <span class="small muted">'+esc(l.parcela)+'</span>' : '')+(parte ? '<div class="small muted">'+esc(parte)+'</div>' : '')+(l.obs ? '<div class="small muted">'+esc(l.obs)+'</div>' : '')+'</td><td class="small">'+esc(l.categoria || '—')+'<div class="muted">'+esc(grupoDe(l))+'</div></td>'+
     '<td style="text-align:right;white-space:nowrap;font-weight:700;color:'+(l.tipo === 'receita' ? 'var(--ok)' : 'var(--bad)')+'">'+(l.tipo === 'receita' ? '+ ' : '− ')+brl(l.valor)+'</td><td><span class="bdg '+c+'">'+t+'</span>'+(l.pago_em ? '<div class="small muted">'+esc([l.forma, conta && conta.nome].filter(Boolean).join(' · '))+'</div>' : '')+'</td>'+
     '<td style="white-space:nowrap">'+(l.pago_em ? '<button class="btn sec sm" onclick="estornarLanc(\''+l.id+'\')">Desfazer baixa</button>' : '<button class="btn ok sm" onclick="modalBaixa(\''+l.id+'\')">'+(l.tipo === 'receita' ? 'Receber' : 'Pagar')+'</button>')+
     ' <button class="btn sec sm" onclick="modalLanc(\''+l.tipo+'\',\''+l.id+'\')">Editar</button> <button class="btn dg sm" onclick="excluirLanc(\''+l.id+'\')">Excluir</button></td></tr>';
@@ -1252,9 +1261,9 @@ async function finAbertos(tipo){
   const venc = lista.filter(l => dias(l.vencimento) < 0), sete = lista.filter(l => dias(l.vencimento) >= 0 && dias(l.vencimento) <= 7), trinta = lista.filter(l => dias(l.vencimento) > 7 && dias(l.vencimento) <= 30), depois = lista.filter(l => dias(l.vencimento) > 30);
   let h = '<div class="kpis">'+kpiF('Total ' + (rec ? 'a receber' : 'a pagar'), brl(somaV(lista)), rec ? 'var(--navy2)' : 'var(--warn)', lista.length + ' lançamento(s)')+kpiF('Vencidos', brl(somaV(venc)), venc.length ? 'var(--bad)' : '', venc.length + ' lançamento(s)')+kpiF('Próximos 7 dias', brl(somaV(sete)), '', sete.length + ' lançamento(s)')+kpiF('8 a 30 dias', brl(somaV(trinta)), '', trinta.length + ' lançamento(s)')+kpiF('Depois de 30 dias', brl(somaV(depois)), '', depois.length + ' lançamento(s)')+'</div>';
   if(rec && venc.length){
-    const porAluno = {}; venc.filter(l => l.pessoas).forEach(l => { porAluno[l.pessoas.nome] = (porAluno[l.pessoas.nome] || 0) + Number(l.valor); });
+    const porAluno = {}; venc.filter(l => l.pessoas || l.empresa_id).forEach(l => { const k = parteLanc(l); porAluno[k] = (porAluno[k] || 0) + Number(l.valor); });
     const top = Object.entries(porAluno).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    if(top.length) h += '<div class="card"><h3>Maiores atrasos por aluno</h3>'+barrasH(top.map(([n, v]) => ({ nome: n, v, txt: brl(v), tt: esc(n) + ': <b>' + brl(v) + '</b>' })), {})+'</div>';
+    if(top.length) h += '<div class="card"><h3>Maiores atrasos por cliente (aluno ou empresa)</h3>'+barrasH(top.map(([n, v]) => ({ nome: n, v, txt: brl(v), tt: esc(n) + ': <b>' + brl(v) + '</b>' })), {})+'</div>';
   }
   const bloco = (t, l, cor) => l.length ? '<div class="card"><h3'+(cor ? ' style="color:'+cor+'"' : '')+'>'+t+' <span class="muted">('+l.length+' · '+brl(somaV(l))+')</span></h3>'+tabelaLanc(l)+'</div>' : '';
   h += bloco('Vencidos', venc, 'var(--bad)') + bloco('Próximos 7 dias', sete) + bloco('De 8 a 30 dias', trinta) + bloco('Depois de 30 dias', depois);
@@ -1328,6 +1337,53 @@ async function finCadastros(){
     S.cursos.filter(c => c.ativo).map(c => '<tr><td>'+esc(nomeCurso(c))+'</td><td style="text-align:right"><input style="width:120px;text-align:right" inputmode="decimal" value="'+(c.valor ? String(c.valor).replace('.', ',') : '')+'" placeholder="0,00" onchange="salvarPreco(\''+c.id+'\',this)"></td></tr>').join('')+'</table></div></div></div>';
   return h;
 }
+async function finFornecedores(){
+  const desde = addMeses(hojeISO().slice(0, 7) + '-01', -11);
+  const lanc = await buscarTodos(() => sb.from('lancamentos').select('fornecedor_id,valor,pago_em,vencimento').eq('escola_id', S.perfil.escola_id).eq('tipo', 'despesa').not('fornecedor_id', 'is', null));
+  const tot = {}; lanc.forEach(l => { const t = tot[l.fornecedor_id] = tot[l.fornecedor_id] || { pago: 0, aberto: 0, ult: null };
+    if(l.pago_em){ if(l.pago_em >= desde) t.pago += Number(l.valor); if(!t.ult || l.pago_em > t.ult) t.ult = l.pago_em; } else t.aberto += Number(l.valor); });
+  const fs = S.finForn, ativos = fs.filter(f => f.ativo), totPago = Object.values(tot).reduce((a, t) => a + t.pago, 0), totAberto = Object.values(tot).reduce((a, t) => a + t.aberto, 0);
+  let h = '<div class="kpis">'+kpiF('Fornecedores ativos', ativos.length)+kpiF('Pago a fornecedores', brl(totPago), 'var(--bad)', 'últimos 12 meses')+kpiF('A pagar a fornecedores', brl(totAberto), totAberto ? 'var(--warn)' : '')+'</div>';
+  const top = fs.filter(f => tot[f.id] && tot[f.id].pago).map(f => [f.nome, tot[f.id].pago]).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  if(top.length) h += '<div class="card"><h3>Maiores fornecedores — últimos 12 meses</h3>'+barrasH(top.map(([n, v]) => ({ nome: n, v, txt: brl(v) + ' · ' + Math.round(100 * v / totPago) + '%', tt: esc(n) + ': <b>' + brl(v) + '</b>' })), {})+'</div>';
+  h += '<div class="card"><div class="bar" style="margin-top:0"><h3 style="margin:0">Fornecedores <span class="muted">('+fs.length+')</span></h3><input style="width:auto;flex:1 1 180px" placeholder="Buscar nome, CNPJ ou telefone" oninput="filtrarForn(this.value)"><span class="sp"></span><button class="btn" onclick="modalForn()">+ Novo fornecedor</button></div>';
+  h += fs.length ? '<div class="tw"><table id="tbForn"><tr><th>Fornecedor</th><th>Contato</th><th>Categoria padrão</th><th style="text-align:right">Pago (12 meses)</th><th style="text-align:right">Em aberto</th><th></th></tr>'+fs.map(f => {
+    const t = tot[f.id] || { pago: 0, aberto: 0 };
+    return '<tr data-busca="'+esc([f.nome, f.documento, soDig(f.documento), f.telefone, soDig(f.telefone), f.contato].filter(Boolean).join(' ')).toLowerCase()+'"><td><b>'+esc(f.nome)+'</b>'+(f.ativo ? '' : ' <span class="bdg">inativo</span>')+(f.documento ? '<div class="small muted">'+(soDig(f.documento).length > 11 ? 'CNPJ ' : 'CPF ')+esc(f.documento)+'</div>' : '')+'</td>'+
+      '<td class="small">'+esc([f.contato, f.telefone, f.email].filter(Boolean).join(' · ') || '—')+(f.pix ? '<div class="muted">Pix: '+esc(f.pix)+'</div>' : '')+'</td><td class="small">'+esc(f.categoria || '—')+'</td>'+
+      '<td style="text-align:right">'+brl(t.pago)+(t.ult ? '<div class="small muted">último '+fmt(t.ult)+'</div>' : '')+'</td><td style="text-align:right;'+(t.aberto ? 'color:var(--warn);font-weight:700' : '')+'">'+brl(t.aberto)+'</td>'+
+      '<td style="white-space:nowrap;text-align:right"><button class="btn dg sm" onclick="modalLanc(\'despesa\',null,{fornecedor_id:\''+f.id+'\',descricao:'+esc(JSON.stringify(f.nome))+',categoria:'+esc(JSON.stringify(f.categoria || null))+',vencimento:hojeISO()})">+ Despesa</button> <button class="btn sec sm" onclick="modalForn(\''+f.id+'\')">Editar</button>'+(f.telefone ? ' <a class="btn sec sm" target="_blank" rel="noopener" href="'+esc(linkWhats(f.telefone, 'Olá' + (f.contato ? ', ' + f.contato.split(' ')[0] : '') + '!') || '#')+'">WhatsApp</a>' : '')+'</td></tr>';
+  }).join('')+'</table></div>' : '<p class="muted">Nenhum fornecedor cadastrado. Cadastre quem a escola paga com frequência: aluguel, contador, munição, alimentação, gráfica…</p>';
+  return h + '</div><p class="small muted">Ao lançar uma despesa, escolha o fornecedor: a categoria padrão dele é preenchida sozinha e os totais aparecem aqui.</p>';
+}
+function filtrarForn(v){ v = v.toLowerCase().trim(); document.querySelectorAll('#tbForn tr[data-busca]').forEach(tr => { tr.style.display = !v || tr.dataset.busca.includes(v) ? '' : 'none'; }); }
+function modalForn(id){
+  const f = id ? S.finForn.find(x => x.id === id) : {}, v = k => esc(f[k] || '');
+  const cats = S.finCats.filter(c => c.tipo === 'despesa' && (c.ativo || c.nome === f.categoria));
+  abrirModal(id ? 'Editar fornecedor' : 'Novo fornecedor', '<div class="fgrid">'+
+    '<label class="f w"><span>Nome / razão social *</span><input id="fnNome" value="'+v('nome')+'"></label>'+
+    '<label class="f"><span>CNPJ ou CPF</span><input id="fnDoc" value="'+v('documento')+'"></label>'+
+    '<label class="f"><span>Pessoa de contato</span><input id="fnCont" value="'+v('contato')+'"></label>'+
+    '<label class="f"><span>Telefone / WhatsApp</span><input id="fnTel" value="'+v('telefone')+'"></label>'+
+    '<label class="f"><span>E-mail</span><input id="fnEmail" type="email" value="'+v('email')+'"></label>'+
+    '<label class="f"><span>Chave Pix / dados bancários</span><input id="fnPix" value="'+v('pix')+'"></label>'+
+    '<label class="f"><span>Categoria de despesa padrão</span><select id="fnCat"><option value="">— nenhuma —</option>'+[...new Set(cats.map(c => c.grupo || 'Outras'))].map(g => '<optgroup label="'+esc(g)+'">'+cats.filter(c => (c.grupo || 'Outras') === g).map(c => '<option'+(c.nome === f.categoria ? ' selected' : '')+'>'+esc(c.nome)+'</option>').join('')+'</optgroup>').join('')+'</select></label>'+
+    '<label class="f w"><span>Endereço</span><input id="fnEnd" value="'+v('endereco')+'"></label>'+
+    '<label class="f w"><span>Observação</span><input id="fnObs" value="'+v('obs')+'"></label>'+
+    (id ? '<label class="chk" style="font-size:14px"><input type="checkbox" id="fnAtivo"'+(f.ativo ? ' checked' : '')+'> <span>Fornecedor ativo</span></label>' : '')+'</div>',
+    '<button class="btn" onclick="salvarForn(\''+(id || '')+'\',this)">Salvar</button>');
+}
+async function salvarForn(id, btn){
+  const nome = $('#fnNome').value.trim(); if(!nome) return toast('Informe o nome do fornecedor.', 'erro');
+  const t = s => $(s).value.trim() || null;
+  const dados = { nome, documento: t('#fnDoc'), contato: t('#fnCont'), telefone: t('#fnTel'), email: t('#fnEmail'), pix: t('#fnPix'), categoria: t('#fnCat'), endereco: t('#fnEnd'), obs: t('#fnObs') };
+  if($('#fnAtivo')) dados.ativo = $('#fnAtivo').checked;
+  const solta = travar(btn);
+  try {
+    if(id) await q(sb.from('fornecedores').update(dados).eq('id', id)); else await q(sb.from('fornecedores').insert({ ...dados, escola_id: S.perfil.escola_id }));
+    fecharModal(); toast('Fornecedor salvo.'); recarregar();
+  } finally { solta(); }
+}
 async function salvarPreco(id, inp){
   const v = inp.value.trim() ? lerValor(inp.value) : null;
   if(v !== null && !(v >= 0)) return toast('Valor inválido.', 'erro');
@@ -1392,8 +1448,28 @@ async function trocaCategoria(sel, tipo){
   if(sel.value === 'nova'){ const c = await novaCat(tipo, true); sel.innerHTML = opcoesCategoria(tipo, c ? { categoria: c.nome } : null); return; }
   if(sel.value.startsWith('curso:') && !$('#lcValor').value.trim()){ const c = S.cursos.find(x => x.id === sel.value.slice(6)); if(c && c.valor) $('#lcValor').value = String(c.valor).replace('.', ','); }
 }
+// clientes das receitas: alunos e empresas parceiras na mesma lista
+const opcoesCliente = () => (S.finPessoas || []).map(p => ({ tipo: 'aluno', id: p.id, nome: p.nome, v: p.nome + ' — aluno' }))
+  .concat(Object.values(S.empresas || {}).map(e => ({ tipo: 'empresa', id: e.id, nome: e.nome, v: e.nome + ' — empresa parceira' })));
+const valorCliente = l => {
+  if(!l) return '';
+  if(l.pessoa_id || l.pessoas){ const p = (S.finPessoas || []).find(x => x.id === l.pessoa_id); const n = p ? p.nome : (l.pessoas ? l.pessoas.nome : ''); return n ? n + ' — aluno' : ''; }
+  if(l.empresa_id && S.empresas && S.empresas[l.empresa_id]) return S.empresas[l.empresa_id].nome + ' — empresa parceira';
+  return '';
+};
+const opcoesForn = sel => '<option value="">— não informar —</option>'+(S.finForn || []).filter(f => f.ativo || f.id === sel).map(f => '<option value="'+f.id+'"'+(f.id === sel ? ' selected' : '')+'>'+esc(f.nome)+'</option>').join('')+'<option value="novo">+ Cadastrar novo fornecedor…</option>';
+async function trocaForn(sel){
+  if(sel.value === 'novo'){
+    const nome = (prompt('Nome do novo fornecedor (os outros dados podem ser completados depois em Financeiro → Fornecedores):') || '').trim();
+    if(!nome){ sel.value = ''; return; }
+    const f = await q(sb.from('fornecedores').insert({ escola_id: S.perfil.escola_id, nome }).select().single());
+    S.finForn.push(f); S.finForn.sort((a, b) => a.nome.localeCompare(b.nome)); sel.innerHTML = opcoesForn(f.id); toast('Fornecedor cadastrado.'); return;
+  }
+  const f = (S.finForn || []).find(x => x.id === sel.value), cat = $('#lcCat');
+  if(f && f.categoria && cat && !cat.value && [...cat.options].some(o => o.value === 'cat:' + f.categoria)) cat.value = 'cat:' + f.categoria;
+}
 async function modalLanc(tipo, id, pre){
-  if(!S.finCats) await carregarFinBase();
+  if(!S.finCats || !S.finForn) await carregarFinBase();
   const l = id ? S.finLanc[id] : (pre || null);
   if(!S.finPessoas) S.finPessoas = await buscarTodos(() => sb.from('pessoas').select('id,nome').eq('escola_id', S.perfil.escola_id).order('nome'));
   const rec = tipo === 'receita', contas = S.finContas.filter(c => c.ativo || (l && l.conta_id === c.id));
@@ -1404,7 +1480,8 @@ async function modalLanc(tipo, id, pre){
     '<label class="f"><span>Valor (R$)</span><input id="lcValor" inputmode="decimal" value="'+(l && l.valor ? String(l.valor).replace('.', ',') : '')+'" placeholder="0,00"></label>'+
     '<label class="f"><span>Vencimento</span><input id="lcVenc" type="date" value="'+(l && l.vencimento ? l.vencimento : hojeISO())+'"></label>'+
     '<label class="f"><span>Conta</span><select id="lcConta"><option value="">— não informar —</option>'+contas.map(c => '<option value="'+c.id+'"'+(l && l.conta_id === c.id ? ' selected' : '')+'>'+esc(c.nome)+'</option>').join('')+'</select></label>'+
-    (rec ? '<label class="f"><span>Aluno (opcional)</span><input id="lcPessoa" list="lcPessoas" value="'+esc(l && l.pessoas ? l.pessoas.nome : '')+'"><datalist id="lcPessoas">'+S.finPessoas.map(p => '<option value="'+esc(p.nome)+'">').join('')+'</datalist></label>' : '')+
+    (rec ? '<label class="f"><span>Cliente: aluno ou empresa parceira (opcional)</span><input id="lcPessoa" list="lcPessoas" placeholder="Digite o nome" value="'+esc(valorCliente(l))+'"><datalist id="lcPessoas">'+opcoesCliente().map(o => '<option value="'+esc(o.v)+'">').join('')+'</datalist></label>'
+      : '<label class="f"><span>Fornecedor (opcional)</span><select id="lcForn" onchange="trocaForn(this)">'+opcoesForn(l && l.fornecedor_id)+'</select></label>')+
     (id ? '' : '<label class="f"><span>Repetir</span><select id="lcRep" onchange="$(\'#lcVezesBox\').style.display=this.value?\'\':\'none\'"><option value="">Não repetir</option><option value="parcelar">Parcelar (divide o valor)</option><option value="mensal">Todo mês (mesmo valor)</option></select></label>'+
       '<label class="f" id="lcVezesBox" style="display:none"><span>Quantas vezes</span><input id="lcVezes" type="number" min="2" max="60" value="2"></label>')+
     '<label class="chk w" style="font-size:14px"><input type="checkbox" id="lcPago"'+(l && l.pago_em ? ' checked' : '')+' onchange="$(\'#lcPgBox\').style.display=this.checked?\'\':\'none\'"> <span>Já foi '+(rec ? 'recebido' : 'pago')+(id ? '' : ' (só a primeira, se repetir)')+'</span></label>'+
@@ -1419,10 +1496,11 @@ async function salvarLanc(tipo, id, btn){
   if(!cat || cat === 'nova') return toast('Escolha a categoria.', 'erro');
   if(!(valor > 0)) return toast('Informe um valor maior que zero.', 'erro');
   if(!venc) return toast('Informe o vencimento.', 'erro');
-  const nomeP = $('#lcPessoa') ? $('#lcPessoa').value.trim() : '', pes = nomeP ? (S.finPessoas || []).find(p => p.nome === nomeP) : null;
-  if(nomeP && !pes) return toast('Aluno não encontrado. Escolha um nome da lista ou deixe em branco.', 'erro');
+  const nomeP = $('#lcPessoa') ? $('#lcPessoa').value.trim() : '', cli = nomeP ? opcoesCliente().find(o => o.v === nomeP) || opcoesCliente().find(o => o.nome === nomeP) : null;
+  if(nomeP && !cli) return toast('Cliente não encontrado. Escolha um aluno ou uma empresa da lista, ou deixe em branco.', 'erro');
   const curso = cat.startsWith('curso:') ? S.cursos.find(c => c.id === cat.slice(6)) : null;
-  const pagoOk = $('#lcPago').checked, base = { escola_id: S.perfil.escola_id, tipo, descricao: desc, categoria: curso ? nomeCurso(curso) : cat.slice(4), curso_id: curso ? curso.id : null, conta_id: $('#lcConta').value || null, pessoa_id: pes ? pes.id : null, obs: $('#lcObs').value.trim() || null };
+  const pagoOk = $('#lcPago').checked, base = { escola_id: S.perfil.escola_id, tipo, descricao: desc, categoria: curso ? nomeCurso(curso) : cat.slice(4), curso_id: curso ? curso.id : null, conta_id: $('#lcConta').value || null,
+    pessoa_id: cli && cli.tipo === 'aluno' ? cli.id : null, empresa_id: cli && cli.tipo === 'empresa' ? cli.id : null, fornecedor_id: $('#lcForn') && $('#lcForn').value && $('#lcForn').value !== 'novo' ? $('#lcForn').value : null, obs: $('#lcObs').value.trim() || null };
   const pg = pagoOk ? { pago_em: $('#lcPgData').value || hojeISO(), forma: $('#lcForma').value } : { pago_em: null, forma: null };
   const solta = travar(btn);
   try {
@@ -1463,7 +1541,7 @@ async function excluirLanc(id){
   toast('Excluído.'); recarregar();
 }
 function exportarFin(){
-  const linhas = [['Vencimento','Tipo','Descrição','Parcela','Categoria','Grupo','Aluno','Valor','Pago em','Forma','Conta','Observação']].concat((S.finLista || []).map(l => { const c = S.finContas.find(x => x.id === l.conta_id); return [fmt(l.vencimento), l.tipo === 'receita' ? 'Receita' : 'Despesa', l.descricao, l.parcela || '', l.categoria || '', grupoDe(l), l.pessoas ? l.pessoas.nome : '', String(l.tipo === 'receita' ? l.valor : -l.valor).replace('.', ','), l.pago_em ? fmt(l.pago_em) : '', l.forma || '', c ? c.nome : '', l.obs || '']; }));
+  const linhas = [['Vencimento','Tipo','Descrição','Parcela','Categoria','Grupo','Cliente / fornecedor','Valor','Pago em','Forma','Conta','Observação']].concat((S.finLista || []).map(l => { const c = S.finContas.find(x => x.id === l.conta_id); return [fmt(l.vencimento), l.tipo === 'receita' ? 'Receita' : 'Despesa', l.descricao, l.parcela || '', l.categoria || '', grupoDe(l), parteLanc(l), String(l.tipo === 'receita' ? l.valor : -l.valor).replace('.', ','), l.pago_em ? fmt(l.pago_em) : '', l.forma || '', c ? c.nome : '', l.obs || '']; }));
   baixarCsv(linhas, 'financeiro-' + S.finMes + '.csv');
 }
 function baixarCsv(linhas, nome){
@@ -1558,7 +1636,8 @@ async function excluirOrc(id){ const o = S.orcs[id]; if(!confirm('Excluir o orç
 async function orcFinanceiro(id){
   const o = S.orcs[id], c1 = (o.itens || []).find(i => i.curso_id);
   await carregarFinBase();
-  modalLanc('receita', null, { descricao: 'Orçamento nº ' + numOrc(o.numero) + ' — ' + o.cliente, valor: o.total, curso_id: c1 ? c1.curso_id : null, categoria: c1 ? null : 'Outras receitas', vencimento: hojeISO(), obs: (o.itens || []).map(i => i.qtd + '× ' + (i.sigla || i.descricao)).join(', ') });
+  const emp = Object.values(S.empresas || {}).find(e => e.nome.trim().toLowerCase() === o.cliente.trim().toLowerCase() || (o.documento && soDig(e.cpf_cnpj) && soDig(e.cpf_cnpj) === soDig(o.documento)));
+  modalLanc('receita', null, { descricao: 'Orçamento nº ' + numOrc(o.numero) + ' — ' + o.cliente, valor: o.total, empresa_id: emp ? emp.id : null, curso_id: c1 ? c1.curso_id : null, categoria: c1 ? null : 'Outras receitas', vencimento: hojeISO(), obs: (o.itens || []).map(i => i.qtd + '× ' + (i.sigla || i.descricao)).join(', ') });
 }
 function whatsOrc(id){
   const o = S.orcs[id];
@@ -1635,14 +1714,15 @@ async function vCertificados(){
     buscarTodos(() => sb.from('certificados').select('*').eq('escola_id', eid))
   ]);
   S.certSols = {}; sols.forEach(s => S.certSols[s.id] = s);
-  S.certEmit = {}; emit.forEach(c => S.certEmit[c.solicitacao_id] = c);
+  S.certEmit = {}; emit.filter(c => c.solicitacao_id).forEach(c => S.certEmit[c.solicitacao_id] = c);
+  S.certTodos = emit; S.certAv = emit.filter(c => !c.solicitacao_id).sort((a, b) => (b.numero || 0) - (a.numero || 0));
   S.certTurma = S.certTurma || ''; S.certSit = S.certSit || 'todos';
   const turmas = {}; sols.forEach(s => { if(s.turmas) turmas[s.turma_id] = s.turmas; });
   const tl = Object.entries(turmas).sort((a, b) => String(b[1].fim || '').localeCompare(String(a[1].fim || '')));
   const lista = sols.filter(s => (!S.certTurma || s.turma_id === S.certTurma) && (S.certSit === 'todos' || (S.certSit === 'emitidos') === !!S.certEmit[s.id]))
     .sort((a, b) => String((b.turmas || {}).fim || '').localeCompare(String((a.turmas || {}).fim || '')) || String((a.pessoas || {}).nome || '').localeCompare(String((b.pessoas || {}).nome || '')));
   const mes = hojeISO().slice(0, 7), pend = sols.filter(s => !S.certEmit[s.id]).length;
-  let h = '<div class="bar"><h2 style="margin:0">Certificados</h2><span class="sp"></span><button class="btn sec" onclick="modalCertConfig()">⚙ Modelo do certificado</button></div>';
+  let h = '<div class="bar"><h2 style="margin:0">Certificados</h2><span class="sp"></span><button class="btn" onclick="modalCertAvulso()">+ Certificado avulso</button><button class="btn sec" onclick="modalCertConfig()">⚙ Modelo do certificado</button></div>';
   h += '<div class="kpis">'+kpiF('Alunos aprovados', sols.length, '', 'em turmas concluídas')+kpiF('Certificados emitidos', emit.length, 'var(--ok)')+kpiF('Aguardando emissão', pend, pend ? 'var(--warn)' : '')+kpiF('Emitidos no mês', emit.filter(c => String(c.emitido_em).slice(0, 7) === mes).length)+'</div>';
   if(!(S.escola && S.escola.logo_url)) h += '<div class="aviso">A escola ainda não tem logo cadastrado. O certificado usa o logo padrão da escola: cadastre em <a href="#" onclick="irMenu(\'escola\');return false">Escola</a>.</div>';
   const cfg = certCfg(); if(!cfg.diretor && !cfg.coord) h += '<div class="aviso">Informe os nomes de quem assina o certificado em <a href="#" onclick="modalCertConfig();return false">Modelo do certificado</a>.</div>';
@@ -1654,14 +1734,19 @@ async function vCertificados(){
     return '<tr data-busca="'+esc((p.nome || '') + ' ' + soDig(p.cpf)).toLowerCase()+'"><td><input type="checkbox" class="ckCert" value="'+s.id+'" style="width:auto" onchange="contaCert()"></td><td><b>'+esc(p.nome || '—')+'</b><div class="small muted">CPF '+esc(fmtCpf(p.cpf) || '—')+'</div></td><td>'+esc(cu.sigla || '')+'</td><td class="small">'+esc(t.codigo || '')+'</td><td class="small">'+(t.fim ? fmt(t.fim) : '—')+'</td>'+
       '<td>'+(c ? '<b>Nº '+numCert(c)+'</b><div class="small muted">'+fmt(c.emitido_em)+(c.emissoes > 1 ? ' · ' + c.emissoes + ' impressões' : '')+'</div>'+(c.registro_pf ? '<div class="small muted">Registro PF: '+esc(c.registro_pf)+'</div>' : '') : '<span class="bdg warn">Não emitido</span>')+'</td>'+
       '<td style="white-space:nowrap"><button class="btn '+(c ? 'sec' : '')+' sm" onclick="emitirCert([\''+s.id+'\'],this)">'+(c ? '⬇ Reimprimir' : '⬇ Emitir')+'</button>'+(c ? ' <button class="btn sec sm" onclick="registroPf(\''+c.id+'\')">Registro PF</button>' : '')+'</td></tr>';
-  }).join('')+'</table></div>' : '<p class="muted">'+(sols.length ? 'Nenhum aluno com esse filtro.' : 'Ainda não há alunos aprovados. Os aprovados aparecem aqui quando a turma é concluída (Turmas → Concluir turma).')+'</p>';
+  }).join('')+'</table></div>' : '<p class="muted">'+(sols.length ? 'Nenhum aluno com esse filtro.' : 'Ainda não há alunos aprovados. Os aprovados aparecem aqui quando a turma é concluída (Turmas → Concluir turma). Para emitir sem turma no sistema, use <b>+ Certificado avulso</b>.')+'</p>';
+  h += '</div><div class="card"><div class="bar" style="margin-top:0"><h3 style="margin:0">Certificados avulsos <span class="muted">('+S.certAv.length+')</span></h3><span class="sp"></span><button class="btn sm" onclick="modalCertAvulso()">+ Novo avulso</button></div>'+
+    (S.certAv.length ? '<div class="tw"><table><tr><th>Nº</th><th>Aluno</th><th>Curso</th><th>Período</th><th>Emitido</th><th></th></tr>'+S.certAv.map(c => '<tr><td><b>'+numCert(c)+'</b>'+(c.registro_pf ? '<div class="small muted">PF: '+esc(c.registro_pf)+'</div>' : '')+'</td><td><b>'+esc(c.nome)+'</b><div class="small muted">CPF '+esc(fmtCpf(c.cpf) || '—')+'</div></td><td class="small">'+esc((c.curso_sigla ? c.curso_sigla + ' — ' : '') + c.curso_nome)+(c.carga_horaria ? '<div class="muted">'+String(c.carga_horaria).replace('.', ',')+' h/a</div>' : '')+'</td>'+
+      '<td class="small">'+(c.data_inicio ? fmt(c.data_inicio) + ' a ' : '')+(c.data_fim ? fmt(c.data_fim) : '—')+'</td><td class="small">'+fmt(c.emitido_em)+(c.emissoes > 1 ? '<div class="muted">'+c.emissoes+' impressões</div>' : '')+'</td>'+
+      '<td style="white-space:nowrap"><button class="btn sec sm" onclick="imprimirAvulso(\''+c.id+'\',this)">⬇ Reimprimir</button> <button class="btn sec sm" onclick="modalCertAvulso(\''+c.id+'\')">Editar</button> <button class="btn sec sm" onclick="registroPf(\''+c.id+'\')">Registro PF</button></td></tr>').join('')+'</table></div>'
+    : '<p class="muted" style="margin-bottom:0">Nenhum. Use para alunos de turmas antigas, cursos feitos antes do sistema ou casos especiais.</p>');
   return h + '</div><p class="small muted">O certificado sai em PDF (A4 deitado) com o logo da escola, as assinaturas e, no verso, as disciplinas com carga horária e notas. Cada aluno recebe um número único na primeira emissão; as reimpressões mantêm o mesmo número.</p>';
 }
 function filtrarCert(v){ v = v.toLowerCase().trim(); const d = soDig(v); document.querySelectorAll('#tbCert tr[data-busca]').forEach(tr => { const b = tr.dataset.busca; tr.style.display = !v || b.includes(v) || (d && b.includes(d)) ? '' : 'none'; }); }
 const certSelecionados = () => [...document.querySelectorAll('#tbCert .ckCert:checked')].map(c => c.value);
 function contaCert(){ const n = certSelecionados().length, b = $('#btnCertSel'); if(b){ b.disabled = !n; b.textContent = '⬇ Emitir selecionados' + (n ? ' (' + n + ')' : ''); } }
 async function registroPf(id){
-  const c = Object.values(S.certEmit).find(x => x.id === id), v = prompt('Número do registro do certificado na Polícia Federal (GESP). Deixe em branco para remover:', c.registro_pf || '');
+  const c = (S.certTodos || Object.values(S.certEmit)).find(x => x.id === id), v = prompt('Número do registro do certificado na Polícia Federal (GESP). Deixe em branco para remover:', c.registro_pf || '');
   if(v === null) return;
   await q(sb.from('certificados').update({ registro_pf: v.trim() || null }).eq('id', id)); toast('Registro salvo. Ele aparece no certificado.'); recarregar();
 }
@@ -1712,6 +1797,67 @@ async function emitirCert(ids, btn){
   } catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); }
   finally { solta(); }
 }
+/* certificado avulso: sem turma concluída no sistema */
+async function modalCertAvulso(id){
+  await carregarCursos();
+  if(!S.certPessoas) S.certPessoas = await buscarTodos(() => sb.from('pessoas').select('id,nome,cpf').eq('escola_id', S.perfil.escola_id).order('nome'));
+  const c = id ? S.certAv.find(x => x.id === id) : {}, v = k => esc(c[k] ?? '');
+  const p = c.pessoa_id ? S.certPessoas.find(x => x.id === c.pessoa_id) : null;
+  abrirModal(id ? 'Editar certificado avulso nº ' + numCert(c) : 'Certificado avulso', '<p class="small muted" style="margin-top:0">Para alunos que não estão numa turma concluída no sistema (turmas antigas, cursos feitos antes do sistema, casos especiais). Recebe número na sequência dos demais certificados.</p><div class="fgrid">'+
+    '<label class="f w"><span>Aluno já cadastrado (opcional — preenche nome e CPF)</span><input id="caPes" list="caPessoas" placeholder="Digite o nome ou CPF" value="'+esc(p ? p.nome + ' — ' + fmtCpf(p.cpf) : '')+'" onchange="caEscolhePessoa(this.value)"><datalist id="caPessoas">'+S.certPessoas.map(x => '<option value="'+esc(x.nome + ' — ' + fmtCpf(x.cpf))+'">').join('')+'</datalist></label>'+
+    '<label class="f"><span>Nome completo *</span><input id="caNome" value="'+v('nome')+'"></label><label class="f"><span>CPF</span><input id="caCpf" inputmode="numeric" value="'+esc(fmtCpf(c.cpf))+'"></label>'+
+    '<label class="f w"><span>Curso</span><select id="caCurso" onchange="caEscolheCurso(this.value)"><option value="">Outro curso (digitar abaixo)</option>'+S.cursos.filter(x => x.ativo || x.id === c.curso_id).map(x => '<option value="'+x.id+'"'+(x.id === c.curso_id ? ' selected' : '')+'>'+esc(nomeCurso(x))+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Nome do curso no certificado *</span><input id="caCNome" value="'+v('curso_nome')+'" placeholder="Ex.: Curso de Formação de Vigilante"></label><label class="f"><span>Sigla</span><input id="caSigla" value="'+v('curso_sigla')+'" placeholder="Ex.: CFV"></label>'+
+    '<label class="f"><span>Carga horária (horas-aula)</span><input id="caCarga" inputmode="decimal" value="'+esc(c.carga_horaria ? String(c.carga_horaria).replace('.', ',') : '')+'"></label>'+
+    '<label class="f"><span>Início do curso</span><input id="caIni" type="date" value="'+v('data_inicio')+'"></label><label class="f"><span>Conclusão *</span><input id="caFim" type="date" value="'+esc(c.data_fim || hojeISO())+'"></label>'+
+    '<label class="f"><span>Frequência (%)</span><input id="caFreq" inputmode="decimal" value="'+esc(c.frequencia != null ? String(c.frequencia).replace('.', ',') : '100')+'"></label><label class="f"><span>Média final</span><input id="caNota" inputmode="decimal" value="'+esc(c.nota != null ? String(c.nota).replace('.', ',') : '')+'"></label></div>'+
+    '<p class="small muted" style="margin:0">Se escolher um curso cadastrado, o verso traz as disciplinas desse curso. Em "Outro curso", o certificado sai só com a frente.</p>',
+    (id ? '<button class="btn sec" onclick="salvarCertAvulso(\''+id+'\',this,false)">Salvar</button>' : '')+'<button class="btn" onclick="salvarCertAvulso(\''+(id || '')+'\',this,true)">'+(id ? 'Salvar e reimprimir' : 'Emitir certificado')+'</button>');
+}
+function caEscolhePessoa(val){
+  const p = (S.certPessoas || []).find(x => x.nome + ' — ' + fmtCpf(x.cpf) === val);
+  if(p){ $('#caNome').value = p.nome; $('#caCpf').value = fmtCpf(p.cpf); }
+}
+async function caEscolheCurso(cid){
+  const cu = S.cursos.find(x => x.id === cid); if(!cu) return;
+  $('#caCNome').value = cu.nome; $('#caSigla').value = cu.sigla || '';
+  const d = await q(sb.from('disciplinas').select('carga_horas').eq('curso_id', cid));
+  const t = d.reduce((a, x) => a + Number(x.carga_horas || 0), 0) || cu.carga_horas || '';
+  if(t) $('#caCarga').value = String(t).replace('.', ',');
+}
+async function salvarCertAvulso(id, btn, imprimir){
+  const nome = $('#caNome').value.trim(), curso_nome = $('#caCNome').value.trim(), fim = $('#caFim').value, cpf = soDig($('#caCpf').value);
+  if(!nome) return toast('Informe o nome do aluno.', 'erro');
+  if(!curso_nome) return toast('Informe o nome do curso.', 'erro');
+  if(!fim) return toast('Informe a data de conclusão.', 'erro');
+  if(cpf && cpf.length !== 11) return toast('CPF incompleto.', 'erro');
+  const num = s => { s = $(s).value.trim(); return s ? lerValor(s) : null; };
+  const ini = $('#caIni').value || null; if(ini && ini > fim) return toast('O início não pode ser depois da conclusão.', 'erro');
+  const pSel = (S.certPessoas || []).find(x => x.nome + ' — ' + fmtCpf(x.cpf) === $('#caPes').value);
+  const pes = pSel || (cpf ? (S.certPessoas || []).find(x => soDig(x.cpf) === cpf) : null);
+  const dados = { nome, cpf: cpf || null, pessoa_id: pes ? pes.id : null, curso_id: $('#caCurso').value || null, curso_nome, curso_sigla: $('#caSigla').value.trim() || null,
+    carga_horaria: num('#caCarga'), data_inicio: ini, data_fim: fim, frequencia: num('#caFreq'), nota: num('#caNota') };
+  const solta = travar(btn, imprimir ? 'Gerando...' : null);
+  try {
+    let c;
+    if(id){ c = await q(sb.from('certificados').update(dados).eq('id', id).select().single()); }
+    else c = await q(sb.from('certificados').insert({ ...dados, escola_id: S.perfil.escola_id, solicitacao_id: null }).select().single());
+    fecharModal();
+    if(imprimir) await pdfAvulso(c, !!id);
+    toast(id ? 'Certificado atualizado.' : 'Certificado nº ' + numCert(c) + ' emitido.'); recarregar();
+  } catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); }
+  finally { solta(); }
+}
+async function imprimirAvulso(id, btn){
+  const solta = travar(btn, 'Gerando...');
+  try { await pdfAvulso(S.certAv.find(x => x.id === id), true); recarregar(); } catch(e){ if(!e._mostrado) toast(traduzErro(e), 'erro'); } finally { solta(); }
+}
+async function pdfAvulso(c, reimpressao){
+  if(reimpressao) await sb.from('certificados').update({ emissoes: (c.emissoes || 1) + 1, ultima_emissao: new Date().toISOString() }).eq('id', c.id);
+  const disc = c.curso_id ? await q(sb.from('disciplinas').select('id,curso_id,nome,carga_horas,ordem,sem_nota').eq('curso_id', c.curso_id).order('ordem')) : [];
+  await pdfCertificados([{ c, s: { pessoas: { nome: c.nome, cpf: c.cpf }, cursos: { sigla: c.curso_sigla, nome: c.curso_nome }, turmas: { inicio: c.data_inicio, fim: c.data_fim }, frequencia: c.frequencia, nota: c.nota }, disc, notas: {}, carga: c.carga_horaria }],
+    'certificado-' + numCert(c).replace('/', '-') + '-' + semAcento(c.nome));
+}
 const semAcento = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().replace(/^-|-$/g, '').slice(0, 40);
 async function pdfCertificados(itens, nomeArq){
   const JsPDF = await carregarJsPdf(), e = S.escola || {}, cfg = certCfg();
@@ -1730,7 +1876,7 @@ async function pdfCertificados(itens, nomeArq){
   };
   itens.forEach((it, idx) => {
     const { c, s } = it, p = s.pessoas || {}, t = s.turmas || {}, cu = s.cursos || {};
-    const carga = it.disc.reduce((a, d) => a + Number(d.carga_horas || 0), 0);
+    const carga = it.carga ? Number(it.carga) : it.disc.reduce((a, d) => a + Number(d.carga_horas || 0), 0);
     if(idx) doc.addPage('a4', 'landscape');
     marcaDagua(); moldura();
     let y = 20;
@@ -1747,7 +1893,7 @@ async function pdfCertificados(itens, nomeArq){
     y += 6.5; doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(95, 92, 88); if(p.cpf) doc.text('CPF ' + fmtCpf(p.cpf), W / 2, y, { align: 'center' });
     y += 9; doc.setTextColor(28, 28, 28); doc.setFontSize(12.5);
     const frase = 'concluiu com aproveitamento o ' + String(cu.nome || '').toUpperCase() + (cu.sigla ? ' (' + cu.sigla + ')' : '') + (carga ? ', com carga horária de ' + String(carga).replace('.', ',') + ' horas-aula' : '') +
-      (t.inicio && t.fim ? ', realizado no período de ' + fmt(t.inicio) + ' a ' + fmt(t.fim) : '') + (t.codigo ? ' (turma ' + t.codigo + ')' : '') + (cfg.texto ? ', ' + cfg.texto.replace(/^[,\s]+|[.\s]+$/g, '') : '') + '.';
+      (t.inicio && t.fim ? ', realizado no período de ' + fmt(t.inicio) + ' a ' + fmt(t.fim) : t.fim ? ', concluído em ' + fmt(t.fim) : '') + (t.codigo ? ' (turma ' + t.codigo + ')' : '') + (cfg.texto ? ', ' + cfg.texto.replace(/^[,\s]+|[.\s]+$/g, '') : '') + '.';
     const ls = doc.splitTextToSize(frase, 225); doc.text(ls, W / 2, y, { align: 'center', lineHeightFactor: 1.45 });
     y += ls.length * 6.6 + 6;
     doc.setFontSize(11.5); doc.text((cfg.cidade ? cfg.cidade + ', ' : '') + dataExtenso(c.emitido_em || hojeISO()) + '.', W / 2, y, { align: 'center' });
@@ -1760,7 +1906,7 @@ async function pdfCertificados(itens, nomeArq){
     doc.setFontSize(8.5); doc.setTextColor(95, 92, 88);
     doc.text('Certificado nº ' + numCert(c), 18, H - 15);
     if(c.registro_pf) doc.text('Registro na Polícia Federal nº ' + c.registro_pf, W - 18, H - 15, { align: 'right' });
-    if(!cfg.verso) return;
+    if(!cfg.verso || !it.disc.length) return;
     // VERSO
     doc.addPage('a4', 'landscape'); moldura();
     doc.setTextColor(...cor); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('HISTÓRICO DO CURSO', W / 2, 24, { align: 'center', charSpace: 1 });
