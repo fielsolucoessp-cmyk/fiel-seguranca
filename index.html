@@ -127,7 +127,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.20.1';
+const VERSAO = '1.21.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -436,7 +436,7 @@ async function salvarNovaSenha(btn){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const MODULOS = [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['escola','Escola']];
+const MODULOS = [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['financeiro','Financeiro'],['escola','Escola']];
 // colaborador (staff) vê só os módulos liberados; administrador e dono veem tudo
 const podeModulo = k => !S.perfil || S.perfil.tipo !== 'staff' || S.dono || !Array.isArray(S.perfil.modulos) || S.perfil.modulos.includes(k);
 function menu(){
@@ -1143,6 +1143,151 @@ async function vVencimentos(){
     }).join('')+'</table></div></div>';
   });
   return h;
+}
+
+/* ================= TELA: FINANCEIRO ================= */
+const CAT_FIN = { receita: ['Curso de formação','Reciclagem','Curso de extensão','Taxas e segunda via','Outras receitas'], despesa: ['Aluguel','Salários e encargos','Instrutores','Munição e estande','Material didático','Energia, água e internet','Impostos e taxas','Marketing','Manutenção','Outras despesas'] };
+const FORMAS_PG = ['Pix','Dinheiro','Cartão de crédito','Cartão de débito','Boleto','Transferência'];
+const addMesFixo = (iso, n) => { const [a, m, d] = iso.split('-').map(Number); const ult = new Date(a, m - 1 + n + 1, 0).getDate(); return isoDe(new Date(a, m - 1 + n, Math.min(d, ult))); };
+const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const lerValor = s => { s = String(s || '').replace(/[^\d,.-]/g, ''); if(s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); return Math.round(Number(s) * 100) / 100; };
+function situacaoLanc(l){
+  if(l.pago_em) return ['ok', (l.tipo === 'receita' ? 'Recebido ' : 'Pago ') + fmt(l.pago_em)];
+  const d = dias(l.vencimento);
+  return d < 0 ? ['bad', 'Vencido há ' + (-d) + ' dia(s)'] : d === 0 ? ['warn', 'Vence hoje'] : ['', 'A vencer'];
+}
+async function vFinanceiro(){
+  iniciarDica();
+  const hoje = hojeISO(); S.finMes = S.finMes || hoje.slice(0, 7); S.finFiltro = S.finFiltro || 'todos';
+  const eid = S.perfil.escola_id, ini = S.finMes + '-01', fim = addMeses(ini, 1), ini6 = addMeses(ini, -5);
+  const [doMes, real, venc] = await Promise.all([
+    buscarTodos(() => sb.from('lancamentos').select('*, pessoas(nome)').eq('escola_id', eid).gte('vencimento', ini).lt('vencimento', fim).order('vencimento').order('criado_em')),
+    buscarTodos(() => sb.from('lancamentos').select('tipo,valor,pago_em').eq('escola_id', eid).not('pago_em', 'is', null).gte('pago_em', ini6).lt('pago_em', fim)),
+    buscarTodos(() => sb.from('lancamentos').select('tipo,valor').eq('escola_id', eid).is('pago_em', null).lt('vencimento', hoje))
+  ]);
+  S.finLanc = {}; doMes.forEach(l => S.finLanc[l.id] = l); S.finLista = doMes;
+  const soma = (l, f) => l.filter(f).reduce((a, x) => a + Number(x.valor), 0);
+  const noMes = x => x.pago_em >= ini && x.pago_em < fim;
+  const recebido = soma(real, x => x.tipo === 'receita' && noMes(x)), pago = soma(real, x => x.tipo === 'despesa' && noMes(x)), saldo = recebido - pago;
+  const aReceber = soma(doMes, x => x.tipo === 'receita' && !x.pago_em), aPagar = soma(doMes, x => x.tipo === 'despesa' && !x.pago_em);
+  const vR = venc.filter(x => x.tipo === 'receita'), vD = venc.filter(x => x.tipo === 'despesa');
+  const [a, m] = S.finMes.split('-').map(Number), nomeMes = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][m - 1] + ' de ' + a;
+  const k = (t, v, cor, sub) => '<div class="kpi"><span>'+t+'</span><b style="color:'+(cor || 'inherit')+'">'+v+'</b>'+(sub ? '<div class="small muted">'+sub+'</div>' : '')+'</div>';
+  let h = '<div class="bar"><h2 style="margin:0">Financeiro</h2><span class="sp"></span><button class="btn ok" onclick="modalLanc(\'receita\')">+ Receita</button><button class="btn dg" onclick="modalLanc(\'despesa\')">+ Despesa</button></div>';
+  h += '<div class="bar" style="margin:8px 0 12px"><button class="btn sec sm" onclick="finMes(-1)">◀</button><b style="min-width:150px;text-align:center">'+nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)+'</b><button class="btn sec sm" onclick="finMes(1)">▶</button>'+(S.finMes !== hoje.slice(0, 7) ? '<button class="btn sec sm" onclick="S.finMes=null;recarregar()">Mês atual</button>' : '')+'<span class="sp"></span><button class="btn sec sm" onclick="exportarFin()">⬇ Exportar (Excel)</button></div>';
+  h += '<div class="kpis">'+
+    k('Recebido no mês', brl(recebido), 'var(--ok)')+
+    k('Pago no mês', brl(pago), 'var(--bad)')+
+    k('Saldo do mês', brl(saldo), saldo >= 0 ? 'var(--ok)' : 'var(--bad)', 'recebido − pago')+
+    k('A receber no mês', brl(aReceber), 'var(--navy2)')+
+    k('A pagar no mês', brl(aPagar), 'var(--warn)')+
+    k('Vencidos (todos os meses)', vR.length + vD.length, vR.length + vD.length ? 'var(--bad)' : '', vR.length ? 'a receber ' + brl(soma(vR, () => true)) : (vD.length ? '' : 'nada vencido'))+
+    '</div>';
+  if(vD.length) h += '<div class="aviso bad"><b>'+vD.length+' conta(s) a pagar vencida(s)</b>, total '+brl(soma(vD, () => true))+'. Veja nos meses anteriores e dê baixa ou reagende.</div>';
+  // gráfico: realizado dos últimos 6 meses
+  const meses = []; for(let i = 0; i < 6; i++){ const mm = addMeses(ini6, i).slice(0, 7); const r = real.filter(x => x.pago_em.slice(0, 7) === mm); meses.push({ mes: mm, e: soma(r, x => x.tipo === 'receita'), s: soma(r, x => x.tipo === 'despesa') }); }
+  h += '<div class="card"><h3>Entradas e saídas realizadas — últimos 6 meses</h3>'+graficoFin(meses)+'</div>';
+  // lista
+  const filtros = [['todos','Todos'],['receita','Receitas'],['despesa','Despesas'],['aberto','A vencer'],['vencido','Vencidos'],['pago','Realizados']];
+  const f = S.finFiltro, lista = doMes.filter(l => f === 'todos' || l.tipo === f || (f === 'pago' && l.pago_em) || (f === 'aberto' && !l.pago_em && dias(l.vencimento) >= 0) || (f === 'vencido' && !l.pago_em && dias(l.vencimento) < 0));
+  h += '<div class="card"><div class="bar" style="margin-top:0"><h3 style="margin:0">Lançamentos do mês <span class="muted">('+lista.length+')</span></h3><span class="sp"></span><select style="width:auto" onchange="S.finFiltro=this.value;recarregar()">'+filtros.map(([v, t]) => '<option value="'+v+'"'+(v === f ? ' selected' : '')+'>'+t+'</option>').join('')+'</select></div>';
+  h += lista.length ? '<div class="tw"><table><tr><th>Vencimento</th><th>Descrição</th><th>Categoria</th><th style="text-align:right">Valor</th><th>Situação</th><th></th></tr>'+lista.map(l => {
+    const [c, t] = situacaoLanc(l);
+    return '<tr><td>'+fmt(l.vencimento)+'</td><td><b>'+esc(l.descricao)+'</b>'+(l.parcela ? ' <span class="small muted">'+esc(l.parcela)+'</span>' : '')+(l.pessoas ? '<div class="small muted">'+esc(l.pessoas.nome)+'</div>' : '')+(l.obs ? '<div class="small muted">'+esc(l.obs)+'</div>' : '')+'</td><td class="small">'+esc(l.categoria || '—')+'</td>'+
+      '<td style="text-align:right;white-space:nowrap;font-weight:700;color:'+(l.tipo === 'receita' ? 'var(--ok)' : 'var(--bad)')+'">'+(l.tipo === 'receita' ? '+ ' : '− ')+brl(l.valor)+'</td><td><span class="bdg '+c+'">'+t+'</span>'+(l.forma && l.pago_em ? '<div class="small muted">'+esc(l.forma)+'</div>' : '')+'</td>'+
+      '<td style="white-space:nowrap">'+(l.pago_em ? '<button class="btn sec sm" onclick="estornarLanc(\''+l.id+'\')">Desfazer baixa</button>' : '<button class="btn ok sm" onclick="modalBaixa(\''+l.id+'\')">'+(l.tipo === 'receita' ? 'Receber' : 'Pagar')+'</button>')+
+      ' <button class="btn sec sm" onclick="modalLanc(\''+l.tipo+'\',\''+l.id+'\')">Editar</button> <button class="btn dg sm" onclick="excluirLanc(\''+l.id+'\')">Excluir</button></td></tr>';
+  }).join('')+'</table></div>' : '<p class="muted">Nenhum lançamento neste mês'+(f !== 'todos' ? ' com esse filtro' : '')+'.</p>';
+  h += '</div><p class="small muted">Lançamento sem data de pagamento fica <b>agendado</b> (a receber ou a pagar). Use <b>Receber/Pagar</b> para dar baixa. Todas as alterações ficam no histórico de ações da escola.</p>';
+  return h;
+}
+function graficoFin(meses){
+  const estreito = window.innerWidth < 600, W = estreito ? 360 : 900, H = estreito ? 220 : 250, mL = estreito ? 44 : 60, mR = 8, mT = 16, mB = 26, n = meses.length;
+  const curto = v => v >= 1000 ? (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : Math.round(v).toLocaleString('pt-BR');
+  const max = topoBom(Math.max(1, ...meses.flatMap(m => [m.e, m.s]))), Y = v => H - mB - (H - mB - mT) * v / max;
+  const passo = (W - mL - mR) / n, larg = Math.min(34, (passo - 14) / 2);
+  const barra = (x, v, cor, tt) => { if(!(v > 0)) return ''; const y = Y(v), h = H - mB - y, r = Math.min(4, h); return '<path'+dica(tt)+' fill="'+cor+'" d="M'+x+','+(H - mB)+' V'+(y + r)+' Q'+x+','+y+' '+(x + r)+','+y+' H'+(x + larg - r)+' Q'+(x + larg)+','+y+' '+(x + larg)+','+(y + r)+' V'+(H - mB)+' Z"/>'; };
+  let g = '';
+  [0, max / 2, max].forEach(t => { g += '<line x1="'+mL+'" x2="'+(W - mR)+'" y1="'+Y(t)+'" y2="'+Y(t)+'" stroke="'+(t ? '#eef1f6' : '#dfe3ec')+'"/><text x="'+(mL - 6)+'" y="'+(Y(t) + 4)+'" text-anchor="end">'+(t ? 'R$ ' + curto(t) : '0')+'</text>'; });
+  meses.forEach((m, i) => {
+    const x0 = mL + i * passo + (passo - 2 * larg - 2) / 2, tt = '<b>'+rotMes(m.mes)+'</b><br>Entradas: <b>'+brl(m.e)+'</b><br>Saídas: <b>'+brl(m.s)+'</b><br>Saldo: <b>'+brl(m.e - m.s)+'</b>';
+    g += barra(x0, m.e, '#1baf7a', tt) + barra(x0 + larg + 2, m.s, '#eb6834', tt);
+    g += '<text x="'+(mL + i * passo + passo / 2)+'" y="'+(H - 8)+'" text-anchor="middle">'+rotMes(m.mes, true)+'</text>';
+  });
+  const tot = k => meses.reduce((a, m) => a + m[k], 0);
+  return '<div class="leg"><span><i style="background:#1baf7a"></i>Entradas <b style="color:var(--tx)">'+brl(tot('e'))+'</b></span><span><i style="background:#eb6834"></i>Saídas <b style="color:var(--tx)">'+brl(tot('s'))+'</b></span><span>Saldo <b style="color:var(--tx)">'+brl(tot('e') - tot('s'))+'</b></span></div>'+
+    '<svg class="grafico" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Entradas e saídas realizadas por mês">'+g+'</svg>'+
+    '<details class="num"><summary>Ver números</summary><div class="tw"><table><tr><th>Mês</th><th style="text-align:right">Entradas</th><th style="text-align:right">Saídas</th><th style="text-align:right">Saldo</th></tr>'+meses.map(m => '<tr><td>'+rotMes(m.mes)+'</td><td style="text-align:right">'+brl(m.e)+'</td><td style="text-align:right">'+brl(m.s)+'</td><td style="text-align:right">'+brl(m.e - m.s)+'</td></tr>').join('')+'</table></div></details>';
+}
+function finMes(n){ S.finMes = addMeses((S.finMes || hojeISO().slice(0, 7)) + '-01', n).slice(0, 7); recarregar(); }
+async function modalLanc(tipo, id){
+  const l = id ? S.finLanc[id] : null;
+  if(!S.finPessoas) S.finPessoas = await buscarTodos(() => sb.from('pessoas').select('id,nome').eq('escola_id', S.perfil.escola_id).order('nome'));
+  const rec = tipo === 'receita';
+  abrirModal((l ? 'Editar ' : 'Nova ') + (rec ? 'receita' : 'despesa'),
+    '<div class="fgrid">'+
+    '<label class="f w"><span>Descrição</span><input id="lcDesc" value="'+esc(l ? l.descricao : '')+'" placeholder="'+(rec ? 'Ex.: Mensalidade CFV — João' : 'Ex.: Aluguel da sala')+'"></label>'+
+    '<label class="f"><span>Categoria</span><input id="lcCat" list="lcCats" value="'+esc(l ? l.categoria || '' : '')+'"><datalist id="lcCats">'+CAT_FIN[tipo].map(c => '<option value="'+esc(c)+'">').join('')+'</datalist></label>'+
+    '<label class="f"><span>Valor (R$)</span><input id="lcValor" inputmode="decimal" value="'+(l ? String(l.valor).replace('.', ',') : '')+'" placeholder="0,00"></label>'+
+    '<label class="f"><span>Vencimento</span><input id="lcVenc" type="date" value="'+(l ? l.vencimento : hojeISO())+'"></label>'+
+    (rec ? '<label class="f"><span>Aluno (opcional)</span><input id="lcPessoa" list="lcPessoas" value="'+esc(l && l.pessoas ? l.pessoas.nome : '')+'"><datalist id="lcPessoas">'+S.finPessoas.map(p => '<option value="'+esc(p.nome)+'">').join('')+'</datalist></label>' : '')+
+    (l ? '' : '<label class="f"><span>Repetir</span><select id="lcRep" onchange="$(\'#lcVezesBox\').style.display=this.value?\'\':\'none\'"><option value="">Não repetir</option><option value="parcelar">Parcelar (divide o valor)</option><option value="mensal">Todo mês (mesmo valor)</option></select></label>'+
+      '<label class="f" id="lcVezesBox" style="display:none"><span>Quantas vezes</span><input id="lcVezes" type="number" min="2" max="60" value="2"></label>')+
+    '<label class="chk w" style="font-size:14px"><input type="checkbox" id="lcPago"'+(l && l.pago_em ? ' checked' : '')+' onchange="$(\'#lcPgBox\').style.display=this.checked?\'\':\'none\'"> <span>Já foi '+(rec ? 'recebido' : 'pago')+(l ? '' : ' (só a primeira, se repetir)')+'</span></label>'+
+    '<div id="lcPgBox" class="fgrid w" style="'+(l && l.pago_em ? '' : 'display:none')+'"><label class="f"><span>Data do '+(rec ? 'recebimento' : 'pagamento')+'</span><input id="lcPgData" type="date" value="'+(l && l.pago_em ? l.pago_em : hojeISO())+'"></label>'+
+    '<label class="f"><span>Forma</span><select id="lcForma">'+FORMAS_PG.map(x => '<option'+(l && l.forma === x ? ' selected' : '')+'>'+x+'</option>').join('')+'</select></label></div>'+
+    '<label class="f w"><span>Observação</span><input id="lcObs" value="'+esc(l ? l.obs || '' : '')+'"></label></div>',
+    '<button class="btn" onclick="salvarLanc(\''+tipo+'\',\''+(id || '')+'\',this)">Salvar</button>');
+}
+async function salvarLanc(tipo, id, btn){
+  const desc = $('#lcDesc').value.trim(), valor = lerValor($('#lcValor').value), venc = $('#lcVenc').value;
+  if(!desc) return toast('Informe a descrição.', 'erro');
+  if(!(valor > 0)) return toast('Informe um valor maior que zero.', 'erro');
+  if(!venc) return toast('Informe o vencimento.', 'erro');
+  const nomeP = $('#lcPessoa') ? $('#lcPessoa').value.trim() : '', pes = nomeP ? (S.finPessoas || []).find(p => p.nome === nomeP) : null;
+  if(nomeP && !pes) return toast('Aluno não encontrado. Escolha um nome da lista ou deixe em branco.', 'erro');
+  const pagoOk = $('#lcPago').checked, base = { escola_id: S.perfil.escola_id, tipo, descricao: desc, categoria: $('#lcCat').value.trim() || null, pessoa_id: pes ? pes.id : null, obs: $('#lcObs').value.trim() || null };
+  const pg = pagoOk ? { pago_em: $('#lcPgData').value || hojeISO(), forma: $('#lcForma').value } : { pago_em: null, forma: null };
+  const solta = travar(btn);
+  try {
+    if(id){ await q(sb.from('lancamentos').update({ ...base, valor, vencimento: venc, ...pg }).eq('id', id)); }
+    else {
+      const rep = $('#lcRep').value, n = rep ? Math.min(60, Math.max(2, parseInt($('#lcVezes').value) || 2)) : 1;
+      const grupo = n > 1 ? crypto.randomUUID() : null, linhas = [];
+      const vParc = rep === 'parcelar' ? Math.floor(valor * 100 / n) / 100 : valor, resto = rep === 'parcelar' ? Math.round((valor - vParc * n) * 100) / 100 : 0;
+      for(let i = 0; i < n; i++) linhas.push({ ...base, valor: Math.round((vParc + (i === 0 ? resto : 0)) * 100) / 100, vencimento: addMesFixo(venc, i), grupo, parcela: n > 1 ? (i + 1) + '/' + n : null, ...(i === 0 ? pg : { pago_em: null, forma: null }) });
+      await q(sb.from('lancamentos').insert(linhas));
+    }
+    fecharModal(); toast(id ? 'Lançamento atualizado.' : 'Lançamento salvo.'); recarregar();
+  } finally { solta(); }
+}
+function modalBaixa(id){
+  const l = S.finLanc[id], rec = l.tipo === 'receita';
+  abrirModal((rec ? 'Receber: ' : 'Pagar: ') + l.descricao, '<p style="margin-top:0">Valor: <b>'+brl(l.valor)+'</b> · vencimento '+fmt(l.vencimento)+'</p><div class="fgrid">'+
+    '<label class="f"><span>Data do '+(rec ? 'recebimento' : 'pagamento')+'</span><input id="bxData" type="date" value="'+hojeISO()+'"></label>'+
+    '<label class="f"><span>Forma</span><select id="bxForma">'+FORMAS_PG.map(x => '<option>'+x+'</option>').join('')+'</select></label></div>',
+    '<button class="btn ok" onclick="darBaixa(\''+id+'\',this)">Confirmar '+(rec ? 'recebimento' : 'pagamento')+'</button>');
+}
+async function darBaixa(id, btn){
+  const solta = travar(btn);
+  try { await q(sb.from('lancamentos').update({ pago_em: $('#bxData').value || hojeISO(), forma: $('#bxForma').value }).eq('id', id)); fecharModal(); toast('Baixa registrada.'); recarregar(); } finally { solta(); }
+}
+async function estornarLanc(id){
+  if(!confirm('Desfazer a baixa? O lançamento volta a ficar em aberto.')) return;
+  await q(sb.from('lancamentos').update({ pago_em: null, forma: null }).eq('id', id)); toast('Baixa desfeita.'); recarregar();
+}
+async function excluirLanc(id){
+  const l = S.finLanc[id]; if(!confirm('Excluir "' + l.descricao + '" (' + brl(l.valor) + ')?')) return;
+  if(l.grupo && confirm('Este lançamento faz parte de uma série. Excluir também as PRÓXIMAS parcelas/meses que ainda não foram pagos?\n\nOK = excluir este e os próximos em aberto · Cancelar = só este')){
+    await q(sb.from('lancamentos').delete().eq('grupo', l.grupo).is('pago_em', null).gte('vencimento', l.vencimento));
+    if(l.pago_em) await q(sb.from('lancamentos').delete().eq('id', id));
+  } else await q(sb.from('lancamentos').delete().eq('id', id));
+  toast('Excluído.'); recarregar();
+}
+function exportarFin(){
+  const linhas = [['Vencimento','Tipo','Descrição','Parcela','Categoria','Aluno','Valor','Pago em','Forma','Observação']].concat((S.finLista || []).map(l => [fmt(l.vencimento), l.tipo === 'receita' ? 'Receita' : 'Despesa', l.descricao, l.parcela || '', l.categoria || '', l.pessoas ? l.pessoas.nome : '', String(l.tipo === 'receita' ? l.valor : -l.valor).replace('.', ','), l.pago_em ? fmt(l.pago_em) : '', l.forma || '', l.obs || '']));
+  const csv = '﻿' + linhas.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'financeiro-' + S.finMes + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 /* ================= TELAS DA ESCOLA ================= */
@@ -2111,7 +2256,7 @@ async function definirFuncao(id, tipo){
   toast('Função atualizada. A pessoa precisa sair e entrar de novo no sistema.'); recarregar();
 }
 
-const VIEWS = { semacesso: async () => '<div class="card"><h3>Sem acesso a este módulo</h3><p class="muted">Peça ao administrador da escola para liberar este módulo para você (menu Equipe).</p></div>', inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), andamento: () => vPessoa(S.minhaPessoa, 'andamento'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), einicio: vEmpresaInicio, dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
+const VIEWS = { semacesso: async () => '<div class="card"><h3>Sem acesso a este módulo</h3><p class="muted">Peça ao administrador da escola para liberar este módulo para você (menu Equipe).</p></div>', inicio: () => vPessoa(S.minhaPessoa, 'inicio'), pre: () => vPessoa(S.minhaPessoa, 'pre'), docs: () => vPessoa(S.minhaPessoa, 'docs'), andamento: () => vPessoa(S.minhaPessoa, 'andamento'), meuscursos: () => vPessoa(S.minhaPessoa, 'meuscursos'), einicio: vEmpresaInicio, dados: () => vPessoa(S.minhaPessoa, 'dados'), notas: vNotas, historico: vHistorico, aulas: vAulas, chamada: vChamada, fiel: vFiel, turmas: vTurmas, turma: vTurma, equipe: vEquipe, pessoa: vPessoa, vigilantes: vVigilantes, vencimentos: vVencimentos, financeiro: vFinanceiro, painel: vPainel, analise: vAnalise, pessoas: vPessoas, empresas: vEmpresas, cursos: vCursos, escola: vEscola, conta: vConta };
 
 /* recarrega a tela ao fechar o aviso pós-análise */
 const _fechar = fecharModal;
