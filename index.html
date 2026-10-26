@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.25.0';
+const VERSAO = '1.26.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -607,7 +607,7 @@ async function verArquivo(path, docId){
   if(d && d.paginas && d.paginas.length > 1){ const r = await sb.storage.from('documentos').createSignedUrls(d.paginas.slice(1), 600); extras = (r.data || []).map(x => x.signedUrl).filter(Boolean); }
   let corpo = '<div class="visor">' + (pdf ? '<iframe src="'+esc(url)+'" title="Documento"></iframe>' : '<img src="'+esc(url)+'" alt="Documento enviado">' + extras.map((u, i) => '<div class="small muted" style="margin:8px 0 4px">Página '+(i + 2)+'</div><img src="'+esc(u)+'" alt="Página '+(i + 2)+'">').join('')) + '</div>';
   if(d) corpo += '<div class="small muted" style="margin-top:8px">'+(S.pessoa.p ? esc(S.pessoa.p.nome)+' · ' : '')+'Enviado em '+fmt(d.enviado_em)+(d.validade ? ' · validade '+fmt(d.validade) : '')+' · '+DOCST[estadoDoc(d)][0]+'</div>';
-  let botoes = '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>' + (d && staff() ? '<button class="btn nv" onclick="baixarPdfDoc(\''+d.id+'\',this)">⬇ PDF (GESP)</button>' : '');
+  let botoes = (d && staff() && !pdf ? '<button class="btn sec" onclick="editarFoto(\''+d.id+'\')">✂ Recortar / girar</button>' : '') + '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>' + (d && staff() ? '<button class="btn nv" onclick="baixarPdfDoc(\''+d.id+'\',this)">⬇ PDF (GESP)</button>' : '');
   if(d && staff()){
     const outros = S.pessoa.docs.filter(x => x.status === 'enviado' && x.id !== d.id).length;
     botoes = (d.status !== 'recusado' ? '<button class="btn dg" onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '') +
@@ -615,6 +615,85 @@ async function verArquivo(path, docId){
   }
   abrirModal(d ? d.tipo : 'Documento', corpo, botoes);
   $('.mbox').classList.add('grande');
+}
+/* ===== recortar / girar a foto de um documento (gestores e colaboradores) ===== */
+async function editarFoto(docId, pg){
+  const d = S.pessoa.docs.find(x => x.id === docId); if(!d) return;
+  const paths = d.paginas && d.paginas.length ? d.paginas : [d.arquivo_path]; pg = pg || 0;
+  const { data, error } = await sb.storage.from('documentos').download(paths[pg]); if(error) return toast(traduzErro(error), 'erro');
+  const url = URL.createObjectURL(data);
+  const img = await new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => erro(new Error('Não foi possível abrir a foto.')); i.src = url; }).catch(e => { toast(e.message, 'erro'); return null; });
+  URL.revokeObjectURL(url); if(!img) return;
+  S.ed = { d, pg, paths, img, rot: 0, sel: null };
+  abrirModal('Recortar / girar — ' + d.tipo + (paths.length > 1 ? ' (página ' + (pg + 1) + ' de ' + paths.length + ')' : ''),
+    '<div class="bar" style="margin:0 0 8px">'+(paths.length > 1 ? paths.map((_, i) => '<button class="btn '+(i === pg ? '' : 'sec')+' sm" onclick="editarFoto(\''+d.id+'\','+i+')">Pág. '+(i + 1)+'</button>').join('') : '')+
+    '<button class="btn sec sm" onclick="edGirar(-1)">⟲ Girar</button><button class="btn sec sm" onclick="edGirar(1)">⟳ Girar</button><button class="btn sec sm" onclick="S.ed.sel=null;edDesenhar()">Foto inteira</button>'+
+    '<span class="small muted">Arraste sobre a foto para marcar a parte que fica. Arraste dentro da área para mover e pelos cantos para ajustar.</span></div>'+
+    '<div class="visor" id="edBox" style="touch-action:none;user-select:none"><canvas id="edCv" style="display:block;margin:0 auto;cursor:crosshair;max-width:100%"></canvas></div>',
+    '<button class="btn" onclick="edSalvar(this)">Salvar recorte</button>');
+  $('.mbox').classList.add('grande');
+  edGirar(0);
+  const cv = $('#edCv');
+  cv.addEventListener('pointerdown', edInicio); cv.addEventListener('pointermove', edMover); cv.addEventListener('pointerup', edFim); cv.addEventListener('pointercancel', edFim);
+}
+function edGirar(n){
+  const e = S.ed; e.rot = (e.rot + n + 4) % 4; e.sel = null;
+  const { img } = e, w = img.naturalWidth, h = img.naturalHeight, src = document.createElement('canvas'), deitada = e.rot % 2 === 1;
+  src.width = deitada ? h : w; src.height = deitada ? w : h;
+  const g = src.getContext('2d'); g.translate(src.width / 2, src.height / 2); g.rotate(e.rot * Math.PI / 2); g.drawImage(img, -w / 2, -h / 2);
+  e.src = src;
+  const box = $('#edBox'), maxW = Math.max(200, (box ? box.clientWidth : 800) - 16), maxH = Math.max(200, window.innerHeight * 0.62);
+  e.k = Math.min(1, maxW / src.width, maxH / src.height);
+  const cv = $('#edCv'); cv.width = Math.round(src.width * e.k); cv.height = Math.round(src.height * e.k);
+  edDesenhar();
+}
+function edDesenhar(){
+  const e = S.ed, cv = $('#edCv'); if(!cv) return; const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height); g.drawImage(e.src, 0, 0, cv.width, cv.height);
+  if(!e.sel) return;
+  const { x, y, w, h } = e.sel;
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.rect(0, 0, cv.width, cv.height); g.rect(x, y, w, h); g.fill('evenodd');
+  g.strokeStyle = '#fff'; g.lineWidth = 2; g.setLineDash([6, 4]); g.strokeRect(x, y, w, h); g.setLineDash([]);
+  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--or').trim() || '#f28c28';
+  [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].forEach(([a, b]) => g.fillRect(a - 6, b - 6, 12, 12));
+}
+const edPonto = ev => { const r = $('#edCv').getBoundingClientRect(), cv = $('#edCv'); return { x: Math.max(0, Math.min(cv.width, (ev.clientX - r.left) * cv.width / r.width)), y: Math.max(0, Math.min(cv.height, (ev.clientY - r.top) * cv.height / r.height)) }; };
+function edInicio(ev){
+  const e = S.ed, p = edPonto(ev), s = e.sel; ev.target.setPointerCapture(ev.pointerId);
+  if(s){
+    const cantos = [[s.x, s.y, s.x + s.w, s.y + s.h], [s.x + s.w, s.y, s.x, s.y + s.h], [s.x, s.y + s.h, s.x + s.w, s.y], [s.x + s.w, s.y + s.h, s.x, s.y]];
+    const c = cantos.find(([a, b]) => Math.abs(p.x - a) < 16 && Math.abs(p.y - b) < 16);
+    if(c){ e.arr = { modo: 'novo', ox: c[2], oy: c[3] }; return; }
+    if(p.x > s.x && p.x < s.x + s.w && p.y > s.y && p.y < s.y + s.h){ e.arr = { modo: 'mover', dx: p.x - s.x, dy: p.y - s.y }; return; }
+  }
+  e.arr = { modo: 'novo', ox: p.x, oy: p.y }; e.sel = null;
+}
+function edMover(ev){
+  const e = S.ed; if(!e || !e.arr) return; const p = edPonto(ev), cv = $('#edCv');
+  if(e.arr.modo === 'mover'){ const s = e.sel; s.x = Math.max(0, Math.min(cv.width - s.w, p.x - e.arr.dx)); s.y = Math.max(0, Math.min(cv.height - s.h, p.y - e.arr.dy)); }
+  else e.sel = { x: Math.min(p.x, e.arr.ox), y: Math.min(p.y, e.arr.oy), w: Math.abs(p.x - e.arr.ox), h: Math.abs(p.y - e.arr.oy) };
+  edDesenhar();
+}
+function edFim(){ const e = S.ed; if(!e) return; e.arr = null; if(e.sel && (e.sel.w < 15 || e.sel.h < 15)) e.sel = null; edDesenhar(); }
+async function edSalvar(btn){
+  const e = S.ed, d = e.d;
+  if(!e.sel && !e.rot) return toast('Marque a área do recorte ou gire a foto antes de salvar.', 'erro');
+  const s = e.sel ? { x: e.sel.x / e.k, y: e.sel.y / e.k, w: e.sel.w / e.k, h: e.sel.h / e.k } : { x: 0, y: 0, w: e.src.width, h: e.src.height };
+  const out = document.createElement('canvas'); out.width = Math.round(s.w); out.height = Math.round(s.h);
+  out.getContext('2d').drawImage(e.src, s.x, s.y, s.w, s.h, 0, 0, out.width, out.height);
+  const blob = await new Promise(ok => out.toBlob(ok, 'image/jpeg', 0.92));
+  const solta = travar(btn, 'Salvando...');
+  try {
+    const novo = await subirArquivo(S.pessoa.p, new File([blob], 'recorte.jpg', { type: 'image/jpeg' }));
+    const antigo = e.paths[e.pg], pdfVelho = d.pdf_path, paginas = d.paginas && d.paginas.length ? d.paginas.map((x, i) => i === e.pg ? novo : x) : null;
+    const dados = { arquivo_path: paginas ? paginas[0] : novo, paginas, pdf_path: null };
+    await q(sb.from('documentos').update(dados).eq('id', d.id));
+    Object.assign(d, dados);
+    await sb.storage.from('documentos').remove([antigo].concat(pdfVelho ? [pdfVelho] : []));
+    S._recarregarAoFechar = true; toast('Recorte salvo. O PDF do GESP já sai com a foto nova.');
+    verArquivo(d.arquivo_path, d.id);
+  } catch(er){ if(!er._mostrado) toast(traduzErro(er), 'erro'); }
+  finally { solta(); }
 }
 async function aprovarNoVisor(id, btn){
   if(!confirmaValidade([id])) return;
