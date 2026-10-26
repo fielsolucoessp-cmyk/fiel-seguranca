@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.26.1';
+const VERSAO = '1.26.2';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -194,6 +194,10 @@ const SOL = { rascunho:['Rascunho',''], enviada:['Aguardando análise','warn'], 
 const DOCST = { falta:['Não enviado',''], enviado:['Em análise','warn'], aprovado:['Aprovado','ok'], recusado:['Recusado','bad'], vencido:['Vencido','bad'] };
 const bdg = (par) => '<span class="bdg '+par[1]+'">'+esc(par[0])+'</span>';
 function bdgValidade(iso){ const d = dias(iso); if(d === null) return '<span class="bdg">—</span>'; if(d < 0) return '<span class="bdg bad">Vencido em '+fmt(iso)+'</span>'; if(d <= 30) return '<span class="bdg bad">Vence em '+d+' dia(s)</span>'; if(d <= 90) return '<span class="bdg warn">Vence em '+fmt(iso)+'</span>'; return '<span class="bdg ok">Válido até '+fmt(iso)+'</span>'; }
+// relação de documentos que todo curso novo já cobra (pode ser editada no formulário do curso)
+const DOCS_BASE = ['Foto 3x4 recente (digital)','RG ou CNH','Título de Eleitor','?Certificado de Reservista (homens)','Exame psicológico','Exame de aptidão física e mental',
+  'Comprovante de endereço atualizado no nome do aluno (ou declaração do proprietário + conta de água ou luz)','Histórico escolar ou certificado do Ensino Fundamental completo',
+  'CND Quitação Eleitoral','CND Crimes Eleitorais','CND Estadual 1º grau','CND Estadual 2º grau','CND Militar da União','CND Antecedentes Criminais (SINIC)','CND Federal 1º e 2º grau (regionalizada)'];
 const parseDocs = c => (c && c.docs_exigidos || []).map(t => ({ nome: t.replace(/^\?/, '').trim(), opcional: t.startsWith('?') }));
 const curso = id => S.cursos.find(c => c.id === id) || {};
 function todosTiposDoc(){ const set = new Set(); S.cursos.forEach(c => parseDocs(c).forEach(d => set.add(d.nome))); set.add('Certificado de curso anterior'); set.add('Outro documento'); return [...set]; }
@@ -2278,7 +2282,7 @@ async function vCursos(){
     S.cursos.map(c => '<tr class="click" onclick="editarCurso(\''+c.id+'\')"><td><b>'+esc(c.sigla)+'</b></td><td>'+esc(c.nome)+'</td><td>'+esc(c.grupo_validade || '—')+'</td><td>'+(c.validade_meses ? c.validade_meses+' meses' : 'Sem validade')+'</td><td>'+(c.docs_exigidos || []).length+'</td><td><button class="btn sec sm" onclick="event.stopPropagation();modalDisciplinas(\''+c.id+'\')">Disciplinas'+(S.nDisc && S.nDisc[c.id] ? ' ('+S.nDisc[c.id]+')' : '')+'</button></td><td>'+(c.ativo ? '<span class="bdg ok">Sim</span>' : '<span class="bdg">Não</span>')+'</td></tr>').join('')+'</table></div></div>';
 }
 function editarCurso(id){
-  const c = id ? curso(id) : { sigla:'', nome:'', grupo_validade:'', validade_meses:0, docs_exigidos:[], ativo:true };
+  const c = id ? curso(id) : { sigla:'', nome:'', grupo_validade:'', validade_meses:0, docs_exigidos:DOCS_BASE.slice(), ativo:true };
   abrirModal(id ? 'Editar curso' : 'Novo curso', '<div class="fgrid">'+
     '<label class="f"><span>Sigla</span><input id="cuSigla" value="'+esc(c.sigla)+'"></label>'+
     '<label class="f"><span>Ativo (aceita pré-matrícula)</span><select id="cuAtivo"><option value="1"'+(c.ativo ? ' selected' : '')+'>Sim</option><option value="0"'+(c.ativo ? '' : ' selected')+'>Não</option></select></label>'+
