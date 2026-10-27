@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.26.2';
+const VERSAO = '1.26.3';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -635,6 +635,8 @@ async function verArquivo(path, docId){
   if(d && d.paginas && d.paginas.length > 1){ const r = await sb.storage.from('documentos').createSignedUrls(d.paginas.slice(1), 600); extras = (r.data || []).map(x => x.signedUrl).filter(Boolean); }
   let corpo = '<div class="visor">' + (pdf ? '<iframe src="'+esc(url)+'" title="Documento"></iframe>' : '<img src="'+esc(url)+'" alt="Documento enviado">' + extras.map((u, i) => '<div class="small muted" style="margin:8px 0 4px">Página '+(i + 2)+'</div><img src="'+esc(u)+'" alt="Página '+(i + 2)+'">').join('')) + '</div>';
   if(d && Array.isArray(d.ajustes) && d.ajustes.some(Boolean)) corpo += '<div class="aviso" style="margin:8px 0 0">✂ Esta foto tem recorte/giro salvo: o PDF do GESP sai ajustado. Acima está a foto original enviada pelo aluno.</div>';
+  if(d && staff()) corpo += '<div class="bar" style="margin:8px 0 0;align-items:center"><label for="vsVal" style="font-weight:600">Validade do documento</label><input type="date" id="vsVal" value="'+esc(d.validade || '')+'" style="width:auto">'+
+    '<button class="btn sec sm" onclick="salvarValidadeVisor(\''+d.id+'\',this)">Salvar validade</button><span class="small muted">Deixe em branco se o documento não vence. Ao aprovar, a validade informada já é salva junto.</span></div>';
   if(d) corpo += '<div class="small muted" style="margin-top:8px">'+(S.pessoa.p ? esc(S.pessoa.p.nome)+' · ' : '')+'Enviado em '+fmt(d.enviado_em)+(d.validade ? ' · validade '+fmt(d.validade) : '')+' · '+DOCST[estadoDoc(d)][0]+'</div>';
   let botoes = (d && staff() && !pdf ? '<button class="btn sec" onclick="editarFoto(\''+d.id+'\')">✂ Recortar / girar</button>' : '') + '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>' + (d && staff() ? '<button class="btn nv" onclick="baixarPdfDoc(\''+d.id+'\',this)">⬇ PDF (GESP)</button>' : '');
   if(d && staff()){
@@ -719,11 +721,19 @@ async function edSalvar(btn, desfazer){
   } catch(er){ if(!er._mostrado) toast(traduzErro(er), 'erro'); }
   finally { solta(); }
 }
+async function salvarValidadeVisor(id, btn){
+  const d = S.pessoa.docs.find(x => x.id === id), v = ($('#vsVal') && $('#vsVal').value) || null; if(!d) return;
+  const solta = travar(btn);
+  try { await q(sb.from('documentos').update({ validade: v }).eq('id', id)); d.validade = v; S._recarregarAoFechar = true; toast(v ? 'Validade salva: ' + fmt(v) + '.' : 'Validade removida.'); }
+  finally { solta(); }
+}
 async function aprovarNoVisor(id, btn){
-  if(!confirmaValidade([id])) return;
+  const dv = S.pessoa.docs.find(x => x.id === id), novaVal = $('#vsVal') ? ($('#vsVal').value || null) : undefined, valAntiga = dv ? dv.validade : null;
+  if(dv && novaVal !== undefined) dv.validade = novaVal;
+  if(!confirmaValidade([id])){ if(dv) dv.validade = valAntiga; return; }
   const solta = travar(btn);
   try {
-    await q(sb.from('documentos').update({ status: 'aprovado', motivo: null }).eq('id', id));
+    await q(sb.from('documentos').update(Object.assign({ status: 'aprovado', motivo: null }, novaVal !== undefined ? { validade: novaVal } : {})).eq('id', id));
     const d = S.pessoa.docs.find(x => x.id === id); if(d){ d.status = 'aprovado'; d.motivo = null; }
     S._recarregarAoFechar = true;
     const prox = S.pessoa.docs.find(x => x.status === 'enviado');
