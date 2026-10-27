@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.26.3';
+const VERSAO = '1.26.4';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -442,6 +442,24 @@ async function salvarNovaSenha(btn){
   const { data } = await sb.auth.getSession(); S.perfil = null; entrar(data.session);
 }
 
+/* criar ou trocar a senha estando logado (ex.: quem entrou pelo Google e quer entrar também com e-mail e senha) */
+function modalMinhaSenha(){
+  abrirModal('Criar / trocar minha senha', '<p class="small muted" style="margin-top:0">Depois de salvar, você pode entrar com o e-mail <b>'+esc(S.perfil.email || '')+'</b> e esta senha, além do botão do Google.</p><div class="fgrid">'+
+    '<label class="f"><span>Nova senha (mínimo 8 caracteres)</span><input id="msSenha" type="password" autocomplete="new-password"></label>'+
+    '<label class="f"><span>Repita a senha</span><input id="msSenha2" type="password" autocomplete="new-password"></label></div>',
+    '<button class="btn" onclick="salvarMinhaSenha(this)">Salvar senha</button>');
+}
+async function salvarMinhaSenha(btn){
+  const s1 = $('#msSenha').value, s2 = $('#msSenha2').value;
+  if(s1.length < 8) return toast('A senha precisa ter pelo menos 8 caracteres.', 'erro');
+  if(s1 !== s2) return toast('As senhas não conferem.', 'erro');
+  const solta = travar(btn);
+  const { error } = await sb.auth.updateUser({ password: s1 });
+  solta();
+  if(error) return toast(traduzErro(error), 'erro');
+  fecharModal(); toast('Senha salva. Agora você também pode entrar com e-mail e senha.');
+}
+
 /* ================= NAVEGAÇÃO ================= */
 const MODULOS = [['painel','Painel'],['analise','Análise'],['turmas','Turmas'],['aulas','Aulas'],['pessoas','Pessoas'],['empresas','Empresas'],['vencimentos','Vencimentos'],['cursos','Cursos'],['certificados','Certificados'],['financeiro','Financeiro'],['orcamentos','Orçamentos'],['escola','Escola']];
 // colaborador (staff) vê só os módulos liberados; administrador e dono veem tudo
@@ -457,7 +475,7 @@ function menu(){
 }
 function moldura(){
   if($('#main')) return;
-  $('#app').innerHTML = '<header><div class="hmarca">'+logoHtml()+'<div>'+brandHtml()+'<small>'+esc(S.escola && S.escola.nome !== nomeExib() ? S.escola.nome : '')+'</small></div></div><div class="usr">'+esc(S.perfil.nome || S.perfil.email)+'<br>'+(!staff() && S.escola && linkWhats(S.escola.whatsapp, '') ? '<a class="hdr" href="'+esc(linkWhats(S.escola.whatsapp, 'Olá! Vim pelo portal da escola.'))+'" target="_blank" rel="noopener">💬 Falar com a escola</a> ' : '')+'<button id="btnInstalar" onclick="instalarApp()"'+(_instalar ? ' style="display:inline-block"' : '')+'>📲 Instalar</button> <button onclick="sair()">Sair</button></div></header><nav id="nav"></nav><main id="main"></main><footer>'+rodapeFiel+'</footer>';
+  $('#app').innerHTML = '<header><div class="hmarca">'+logoHtml()+'<div>'+brandHtml()+'<small>'+esc(S.escola && S.escola.nome !== nomeExib() ? S.escola.nome : '')+'</small></div></div><div class="usr">'+esc(S.perfil.nome || S.perfil.email)+'<br>'+(!staff() && S.escola && linkWhats(S.escola.whatsapp, '') ? '<a class="hdr" href="'+esc(linkWhats(S.escola.whatsapp, 'Olá! Vim pelo portal da escola.'))+'" target="_blank" rel="noopener">💬 Falar com a escola</a> ' : '')+'<button id="btnInstalar" onclick="instalarApp()"'+(_instalar ? ' style="display:inline-block"' : '')+'>📲 Instalar</button> <button onclick="modalMinhaSenha()" title="Criar ou trocar a senha para entrar com e-mail e senha">🔑 Senha</button> <button onclick="sair()">Sair</button></div></header><nav id="nav"></nav><main id="main"></main><footer>'+rodapeFiel+'</footer>';
 }
 function desenharMenu(){
   const raiz = { pessoa:'pessoa', vigilantes:'vigilantes' };
