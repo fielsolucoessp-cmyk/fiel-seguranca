@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.27.1';
+const VERSAO = '1.28.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -195,10 +195,11 @@ const DOCST = { falta:['Não enviado',''], enviado:['Em análise','warn'], aprov
 const bdg = (par) => '<span class="bdg '+par[1]+'">'+esc(par[0])+'</span>';
 function bdgValidade(iso){ const d = dias(iso); if(d === null) return '<span class="bdg">—</span>'; if(d < 0) return '<span class="bdg bad">Vencido em '+fmt(iso)+'</span>'; if(d <= 30) return '<span class="bdg bad">Vence em '+d+' dia(s)</span>'; if(d <= 90) return '<span class="bdg warn">Vence em '+fmt(iso)+'</span>'; return '<span class="bdg ok">Válido até '+fmt(iso)+'</span>'; }
 // relação de documentos que todo curso novo já cobra (pode ser editada no formulário do curso)
-const DOCS_BASE = ['Foto 3x4 recente (digital)','RG ou CNH','Título de Eleitor','?Certificado de Reservista (homens)','Exame psicológico','Exame de aptidão física e mental',
+const DOCS_BASE = ['Foto 3x4 recente (digital)','RG ou CNH','Título de Eleitor','Certificado de Reservista (homens)','Exame psicológico','Exame de aptidão física e mental',
   'Comprovante de endereço atualizado no nome do aluno (ou declaração do proprietário + conta de água ou luz)','Histórico escolar ou certificado do Ensino Fundamental completo',
   'CND Quitação Eleitoral','CND Crimes Eleitorais','CND Estadual 1º grau','CND Estadual 2º grau','CND Militar da União','CND Antecedentes Criminais (SINIC)','CND Federal 1º e 2º grau (regionalizada)'];
-const parseDocs = c => (c && c.docs_exigidos || []).map(t => ({ nome: t.replace(/^\?/, '').trim(), opcional: t.startsWith('?') }));
+const ehMulher = p => /^f/i.test(String(p && p.sexo || ''));
+const parseDocs = (c, p) => (c && c.docs_exigidos || []).map(t => ({ nome: t.replace(/^\?/, '').trim(), opcional: t.startsWith('?') || (/\(homens\)/i.test(t) && ehMulher(p)), soHomens: /\(homens\)/i.test(t) }));
 const curso = id => S.cursos.find(c => c.id === id) || {};
 function todosTiposDoc(){ const set = new Set(); S.cursos.forEach(c => parseDocs(c).forEach(d => set.add(d.nome))); set.add('Certificado de curso anterior'); set.add('Outro documento'); return [...set]; }
 
@@ -771,7 +772,7 @@ async function aprovarTodos(){
 /* ================= TELA: PESSOA (cadastro, pré-matrículas, documentos, cursos) ================= */
 function docAtual(tipo){ return (S.pessoa.docs || []).find(d => d.tipo === tipo) || null; }
 function estadoDoc(d){ if(!d) return 'falta'; if(d.status === 'recusado') return 'recusado'; if(d.validade && dias(d.validade) < 0) return 'vencido'; return d.status; }
-function faltando(sol){ return parseDocs(sol.cursos).filter(x => !x.opcional && ['falta','recusado','vencido'].includes(estadoDoc(docAtual(x.nome)))); }
+function faltando(sol){ return parseDocs(sol.cursos, S.pessoa && S.pessoa.p).filter(x => !x.opcional && ['falta','recusado','vencido'].includes(estadoDoc(docAtual(x.nome)))); }
 
 async function vPessoa(id, aba){
   if(!id) return '<div class="card">Cadastro não encontrado. Fale com a escola.</div>';
@@ -921,7 +922,7 @@ function blocoAndamento(s){
 }
 
 function cardSolicitacao(s){
-  const c = s.cursos || {}, lista = parseDocs(c), falta = faltando(s);
+  const c = s.cursos || {}, lista = parseDocs(c, S.pessoa && S.pessoa.p), falta = faltando(s);
   const editavel = !staff() && ['rascunho','pendente'].includes(s.status);
   let h = '<div class="sol"><h4>'+esc(c.sigla || '')+' — '+esc(c.nome || '')+' '+bdg(SOL[s.status])+'</h4>';
   h += '<div class="small muted">Criada em '+fmt(s.criado_em)+(s.enviada_em ? ' · enviada em '+fmt(s.enviada_em) : '')+(s.obs ? ' · obs.: '+esc(s.obs) : '')+'</div>';
@@ -935,7 +936,7 @@ function cardSolicitacao(s){
     h += '<div class="tw" style="margin-top:8px"><table><tr><th>Documento exigido</th><th>Situação</th><th></th></tr>'+lista.map(x => {
       const d = docAtual(x.nome), st = estadoDoc(d);
       const podeEnviar = st !== 'aprovado' && (staff() || ['rascunho','pendente','enviada'].includes(s.status));
-      return '<tr><td>'+esc(x.nome)+(x.opcional ? ' <span class="muted small">(se aplicável)</span>' : '')+'</td><td>'+bdg(DOCST[st])+(d && d.status === 'recusado' && d.motivo ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
+      return '<tr><td>'+esc(x.nome)+(x.opcional ? ' <span class="muted small">'+(x.soHomens ? '(não exigido para mulheres)' : '(se aplicável)')+'</span>' : '')+(x.soHomens && !x.opcional && !(S.pessoa && S.pessoa.p && S.pessoa.p.sexo) ? '<div class="small muted">Mulher? Informe o sexo nos dados pessoais e este item deixa de ser cobrado.</div>' : '')+'</td><td>'+bdg(DOCST[st])+(d && d.status === 'recusado' && d.motivo ? '<div class="small" style="color:var(--bad)">'+esc(d.motivo)+'</div>' : '')+'</td>'+
         '<td class="acoes">'+(d ? '<button class="btn sec sm" onclick="verArquivo(\''+esc(d.arquivo_path)+'\',\''+d.id+'\')">Ver</button> ' : '')+
         (podeEnviar ? '<button class="btn sm" onclick="modalEnvio(\''+esc(x.nome).replace(/&#39;/g, "\\'")+'\')">'+(d ? 'Reenviar' : 'Enviar')+'</button>' : '')+
         (staff() && d && d.status === 'enviado' ? ' <button class="btn ok sm" onclick="analisarDoc(\''+d.id+'\',\'aprovado\')">Aprovar</button> <button class="btn dg sm" onclick="recusarDoc(\''+d.id+'\')">Recusar</button>' : '')+'</td></tr>';
@@ -2148,14 +2149,14 @@ async function vPainel(){
 /* pré-matrículas que não andam: o que falta de cada aluno, com mensagem pronta */
 async function blocoParadas(){
   const eid = S.perfil.escola_id;
-  const sols = await q(sb.from('solicitacoes').select('id,pessoa_id,status,criado_em,obs_escola,pessoas(nome,telefone,email),cursos(sigla,nome,docs_exigidos)').eq('escola_id', eid).in('status', ['rascunho','pendente']).order('criado_em'));
+  const sols = await q(sb.from('solicitacoes').select('id,pessoa_id,status,criado_em,obs_escola,pessoas(nome,telefone,email,sexo),cursos(sigla,nome,docs_exigidos)').eq('escola_id', eid).in('status', ['rascunho','pendente']).order('criado_em'));
   if(!sols.length) return '';
   const pids = [...new Set(sols.map(s => s.pessoa_id))];
   const docs = await buscarTodos(() => sb.from('documentos').select('pessoa_id,tipo,status,validade,enviado_em').in('pessoa_id', pids).order('enviado_em', { ascending: false }));
   const hoje = hojeISO();
   const linhas = sols.map(s => {
     const meus = docs.filter(d => d.pessoa_id === s.pessoa_id), atual = t => meus.find(d => d.tipo === t);
-    const req = parseDocs(s.cursos).filter(x => !x.opcional);
+    const req = parseDocs(s.cursos, s.pessoas).filter(x => !x.opcional);
     const falta = req.filter(x => { const d = atual(x.nome); return !d || d.status === 'recusado' || (d.validade && d.validade < hoje); }).map(x => x.nome);
     const analise = req.filter(x => { const d = atual(x.nome); return d && d.status === 'enviado'; }).length;
     const ult = meus.length ? meus[0].enviado_em : s.criado_em, parado = Math.max(0, Math.floor((Date.now() - new Date(ult)) / 864e5));
@@ -2340,7 +2341,7 @@ async function vPessoas(){
   if(!S.empresas) await carregarEmpresas();
   S.fPes = S.fPes || { emp: '', conta: '' };
   const f = S.fPes, t = S.busca.trim().replace(/[,()%*"\\]/g, ' ').replace(/\s+/g, ' ').trim();
-  let consulta = sb.from('pessoas').select('id,nome,cpf,telefone,email,empresa_id,usuario_id').eq('escola_id', S.perfil.escola_id).order('nome').limit(300);
+  let consulta = sb.from('pessoas').select('id,nome,cpf,telefone,email,sexo,empresa_id,usuario_id').eq('escola_id', S.perfil.escola_id).order('nome').limit(300);
   if(t){
     const d = soDig(t);
     if(d.length >= 3 && !/[a-z@]/i.test(t)) consulta = consulta.or('cpf.ilike."%' + d + '%",telefone.ilike."%' + d.split('').join('%') + '%"');
@@ -2350,24 +2351,65 @@ async function vPessoas(){
   else if(f.emp) consulta = consulta.eq('empresa_id', f.emp);
   if(f.conta === 'com') consulta = consulta.not('usuario_id', 'is', null);
   else if(f.conta === 'sem') consulta = consulta.is('usuario_id', null);
-  const lista = await q(consulta);
+  let lista = await q(consulta);
+  const prog = await progressoPessoas(lista);
+  S.fPes.doc = S.fPes.doc || '';
+  if(S.fPes.doc) lista = lista.filter(p => { const g = prog[p.id]; return S.fPes.doc === 'analise' ? g.analise > 0 : S.fPes.doc === 'faltando' ? g.sol && g.falta.length > 0 : S.fPes.doc === 'completo' ? g.sol && !g.falta.length : !g.sol; });
   const emps = Object.values(S.empresas || {}).sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
-  const filtrando = t || f.emp || f.conta;
+  const filtrando = t || f.emp || f.conta || f.doc;
   const opt = (v, txt, atual) => '<option value="'+esc(v)+'"'+(v === atual ? ' selected' : '')+'>'+esc(txt)+'</option>';
   return '<div class="bar"><h2 style="margin:0">Pessoas</h2><span class="sp"></span><button class="btn" onclick="modalNovaPessoa(\'\')">+ Cadastro no balcão</button></div>'+
     '<div class="card"><div class="bar" style="margin-top:0;flex-wrap:wrap">'+
     '<input id="bPes" placeholder="Nome, CPF, telefone ou e-mail" value="'+esc(S.busca)+'" onkeydown="if(event.key===\'Enter\'){S.busca=this.value;recarregar()}" style="flex:2 1 220px">'+
     '<select style="flex:1 1 200px" onchange="S.fPes.emp=this.value;S.busca=$(\'#bPes\').value;recarregar()" title="Filtrar pela empresa">'+opt('', 'Todas as empresas', f.emp)+opt('_part', 'Particulares (sem empresa)', f.emp)+emps.map(e => opt(e.id, e.nome, f.emp)).join('')+'</select>'+
     '<select style="flex:0 1 190px" onchange="S.fPes.conta=this.value;S.busca=$(\'#bPes\').value;recarregar()" title="Filtrar por acesso ao portal">'+opt('', 'Com e sem acesso', f.conta)+opt('com', 'Com acesso ao portal', f.conta)+opt('sem', 'Sem acesso (balcão)', f.conta)+'</select>'+
+    '<select style="flex:0 1 210px" onchange="S.fPes.doc=this.value;S.busca=$(\'#bPes\').value;recarregar()" title="Filtrar pela situação dos documentos">'+opt('', 'Documentos: todos', f.doc)+opt('analise', 'Com documento para analisar', f.doc)+opt('faltando', 'Faltando documento', f.doc)+opt('completo', 'Documentação completa', f.doc)+opt('sem', 'Sem pré-matrícula ativa', f.doc)+'</select>'+
     '<button class="btn nv" onclick="S.busca=document.getElementById(\'bPes\').value;recarregar()">Buscar</button>'+
-    (filtrando ? '<button class="btn sec" onclick="S.busca=\'\';S.fPes={emp:\'\',conta:\'\'};recarregar()">Limpar</button>' : '')+'</div>'+
+    (filtrando ? '<button class="btn sec" onclick="S.busca=\'\';S.fPes={emp:\'\',conta:\'\',doc:\'\'};recarregar()">Limpar</button>' : '')+'</div>'+
     '<p class="small muted" style="margin:0 0 8px">'+lista.length+(lista.length === 300 ? '+' : '')+' pessoa(s)'+(filtrando ? ' com esse filtro' : '')+'.</p>'+
-    (lista.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Empresa</th><th>Portal</th></tr>'+lista.map(p => {
+    (lista.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Empresa</th><th>Documentos</th><th>Portal</th></tr>'+lista.map(p => {
       const emp = p.empresa_id && S.empresas[p.empresa_id];
       return '<tr class="click" onclick="go(\'pessoa\',\''+p.id+'\')"><td><b>'+esc(p.nome)+'</b>'+(p.email ? '<div class="small muted">'+esc(p.email)+'</div>' : '')+'</td><td>'+fmtDoc(p.cpf)+'</td><td>'+esc(p.telefone || '—')+'</td>'+
         '<td class="small">'+(emp ? '<a href="#" onclick="event.stopPropagation();S.fPes.emp=\''+p.empresa_id+'\';S.busca=\'\';recarregar();return false" title="Ver todos desta empresa">'+esc(emp.nome)+'</a>' : '<span class="muted">Particular</span>')+'</td>'+
+        '<td style="min-width:190px">'+celDocs(prog[p.id])+'</td>'+
         '<td class="small">'+(p.usuario_id ? '<span class="bdg ok">Com acesso</span>' : '<span class="bdg">Balcão</span>')+'</td></tr>';
     }).join('')+'</table></div>'+(lista.length === 300 ? '<p class="small muted">Mostrando as 300 primeiras. Refine a busca.</p>' : '') : '<p class="muted">Ninguém encontrado.</p>')+'</div>';
+}
+/* situação dos documentos de cada pessoa na pré-matrícula ativa mais recente (mesma regra do Painel) */
+async function progressoPessoas(lista){
+  const r = {}; lista.forEach(p => r[p.id] = { sol: null, falta: [], analise: 0, ok: 0, total: 0, recusados: 0 });
+  const ids = lista.map(p => p.id); if(!ids.length) return r;
+  let sols = [], docs = [];
+  for(let i = 0; i < ids.length; i += 150){
+    const fatia = ids.slice(i, i + 150);
+    const [a, b] = await Promise.all([
+      q(sb.from('solicitacoes').select('pessoa_id,status,criado_em,cursos(sigla,docs_exigidos)').in('pessoa_id', fatia).in('status', ['rascunho','enviada','pendente','aprovada','matriculada']).order('criado_em', { ascending: false })),
+      q(sb.from('documentos').select('pessoa_id,tipo,status,validade,enviado_em').in('pessoa_id', fatia).order('enviado_em', { ascending: false }))
+    ]);
+    sols = sols.concat(a); docs = docs.concat(b);
+  }
+  const hoje = hojeISO();
+  lista.forEach(p => {
+    const g = r[p.id], meus = docs.filter(d => d.pessoa_id === p.id), atual = t => meus.find(d => d.tipo === t);
+    g.analise = new Set(meus.filter(d => d.status === 'enviado' && atual(d.tipo) === d).map(d => d.tipo)).size;
+    g.recusados = new Set(meus.filter(d => d.status === 'recusado' && atual(d.tipo) === d).map(d => d.tipo)).size;
+    g.qtd = new Set(meus.map(d => d.tipo)).size;
+    const s = sols.find(x => x.pessoa_id === p.id); if(!s) return;
+    g.sol = s; const req = parseDocs(s.cursos, p).filter(x => !x.opcional);
+    g.total = req.length;
+    g.falta = req.filter(x => { const d = atual(x.nome); return !d || d.status === 'recusado' || (d.validade && d.validade < hoje); }).map(x => x.nome);
+    g.ok = g.total - g.falta.length;
+  });
+  return r;
+}
+function celDocs(g){
+  if(!g) return '';
+  const extra = (g.analise ? ' · <b style="color:var(--warn)">'+g.analise+' p/ analisar</b>' : '')+(g.recusados ? ' · <span style="color:var(--bad)">'+g.recusados+' recusado(s)</span>' : '');
+  if(!g.sol) return '<span class="small muted">Sem pré-matrícula ativa'+(g.qtd ? ' · '+g.qtd+' doc(s) no cadastro' : '')+'</span>'+(extra ? '<div class="small">'+extra.replace(/^ · /, '')+'</div>' : '');
+  const pct = g.total ? Math.round(100 * g.ok / g.total) : 0;
+  return '<div class="small muted" style="margin-bottom:2px">'+esc((g.sol.cursos || {}).sigla || '')+' · '+esc((SOL[g.sol.status] || [g.sol.status])[0])+'</div>'+
+    '<div style="background:#e6e3dc;border-radius:4px;height:8px;overflow:hidden" title="'+esc(g.falta.length ? 'Faltam: ' + g.falta.join(', ') : 'Documentação completa')+'"><div style="width:'+pct+'%;height:8px;background:'+(pct >= 100 ? 'var(--ok)' : pct >= 80 ? 'var(--ok)' : 'var(--or)')+'"></div></div>'+
+    '<div class="small">'+g.ok+' de '+g.total+(g.falta.length ? ' · faltam '+g.falta.length : ' · <b style="color:var(--ok)">completo</b>')+extra+'</div>';
 }
 async function vEmpresas(){
   await carregarEmpresas();
