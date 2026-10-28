@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.26.4';
+const VERSAO = '1.27.0';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -654,7 +654,7 @@ async function verArquivo(path, docId){
   let corpo = '<div class="visor">' + (pdf ? '<iframe src="'+esc(url)+'" title="Documento"></iframe>' : '<img src="'+esc(url)+'" alt="Documento enviado">' + extras.map((u, i) => '<div class="small muted" style="margin:8px 0 4px">Página '+(i + 2)+'</div><img src="'+esc(u)+'" alt="Página '+(i + 2)+'">').join('')) + '</div>';
   if(d && Array.isArray(d.ajustes) && d.ajustes.some(Boolean)) corpo += '<div class="aviso" style="margin:8px 0 0">✂ Esta foto tem recorte/giro salvo: o PDF do GESP sai ajustado. Acima está a foto original enviada pelo aluno.</div>';
   if(d && staff()) corpo += '<div class="bar" style="margin:8px 0 0;align-items:center"><label for="vsVal" style="font-weight:600">Validade do documento</label><input type="date" id="vsVal" value="'+esc(d.validade || '')+'" style="width:auto">'+
-    '<button class="btn sec sm" onclick="salvarValidadeVisor(\''+d.id+'\',this)">Salvar validade</button><span class="small muted">Deixe em branco se o documento não vence. Ao aprovar, a validade informada já é salva junto.</span></div>';
+    '<button class="btn sec sm" onclick="salvarValidadeVisor(\''+d.id+'\',this)">Salvar validade</button><span class="small muted">'+(exigeValidade(d) ? '<b style="color:var(--bad)">Obrigatória para certidão (CND).</b> ' : 'Deixe em branco se o documento não vence. ')+'Ao aprovar, a validade informada já é salva junto.</span></div>';
   if(d) corpo += '<div class="small muted" style="margin-top:8px">'+(S.pessoa.p ? esc(S.pessoa.p.nome)+' · ' : '')+'Enviado em '+fmt(d.enviado_em)+(d.validade ? ' · validade '+fmt(d.validade) : '')+' · '+DOCST[estadoDoc(d)][0]+'</div>';
   let botoes = (d && staff() && !pdf ? '<button class="btn sec" onclick="editarFoto(\''+d.id+'\')">✂ Recortar / girar</button>' : '') + '<a class="btn sec" href="'+esc(url)+'" target="_blank" rel="noopener">Abrir em nova aba</a>' + (d && staff() ? '<button class="btn nv" onclick="baixarPdfDoc(\''+d.id+'\',this)">⬇ PDF (GESP)</button>' : '');
   if(d && staff()){
@@ -748,6 +748,7 @@ async function salvarValidadeVisor(id, btn){
 async function aprovarNoVisor(id, btn){
   const dv = S.pessoa.docs.find(x => x.id === id), novaVal = $('#vsVal') ? ($('#vsVal').value || null) : undefined, valAntiga = dv ? dv.validade : null;
   if(dv && novaVal !== undefined) dv.validade = novaVal;
+  if(dv && exigeValidade(dv) && !dv.validade){ dv.validade = valAntiga; toast('Informe a validade da certidão antes de aprovar.', 'erro'); if($('#vsVal')) $('#vsVal').focus(); return; }
   if(!confirmaValidade([id])){ if(dv) dv.validade = valAntiga; return; }
   const solta = travar(btn);
   try {
@@ -761,6 +762,7 @@ async function aprovarNoVisor(id, btn){
 }
 async function aprovarTodos(){
   const ids = S.pessoa.docs.filter(d => d.status === 'enviado').map(d => d.id);
+  if(ids.length && cndSemValidade(ids).length) return;
   if(!ids.length || !confirm('Aprovar '+ids.length+' documento(s) em análise? Confirme que você já conferiu todos.') || !confirmaValidade(ids)) return;
   await q(sb.from('documentos').update({ status: 'aprovado', motivo: null }).in('id', ids));
   toast('Documentos aprovados.'); recarregar();
@@ -990,15 +992,29 @@ function mostrarArqs(){
   n.innerHTML = !l.length ? '' : (l[0].type === 'application/pdf' ? 'PDF selecionado: ' + esc(l[0].name) : '<b>' + l.length + ' página(s)</b> — vão virar um único PDF. ' + (l.length < 10 ? 'Tem verso ou mais páginas? Tire outra foto.' : '')) +
     ' <a href="#" onclick="S.arqsEnvio=[];mostrarArqs();return false">Limpar</a>';
 }
+/* o que a escola espera de cada tipo de documento (mostrado na hora do envio) */
+function dicaDoc(tipo){
+  const t = String(tipo || '').toLowerCase(), l = [];
+  if(/^cnd|certid|antecedentes|quita/.test(t)) l.push('<b>Certidão:</b> baixe o <b>PDF direto no site do órgão</b> e envie esse PDF.', 'Não imprima, não fotografe a tela e não escaneie a certidão.', 'Confira se está no seu nome, com CPF, e dentro da validade.');
+  else if(/rg|cnh|cnv|identidade|t[ií]tulo|reservista/.test(t)) l.push('<b>Foto do documento original</b> (não vale print nem foto de tela) ou PDF escaneado.', 'Envie <b>frente e verso</b>: escolha os dois arquivos juntos ou tire uma foto de cada lado.', 'Documento <b>inteiro</b>, sem cortar as bordas, em local claro, sem reflexo e sem dedo na frente.');
+  else if(/endere|resid/.test(t)) l.push('Conta de água, luz, telefone ou internet <b>dos últimos 3 meses</b>, no <b>nome do aluno</b>.', 'Se a conta estiver no nome de outra pessoa: envie a conta <b>e</b> a declaração de residência assinada pelo dono do imóvel (as duas no mesmo envio).', 'Foto do papel inteiro ou o PDF da conta.');
+  else if(/foto 3x4/.test(t)) l.push('Foto <b>recente</b>, de frente, rosto e ombros, <b>fundo claro</b> e liso.', 'Sem óculos escuros, boné ou chapéu. Não envie foto de outra foto.');
+  else if(/exame|psicol|aptid|sa[uú]de|laudo/.test(t)) l.push('Laudo ou atestado <b>completo</b>, com nome, assinatura e registro do profissional (CRP/CRM).', 'Se o laudo tiver data de validade, informe no campo abaixo.');
+  else if(/hist[oó]rico|escolar|fundamental|diploma/.test(t)) l.push('Documento <b>inteiro</b> e legível, frente e verso se tiver informação atrás.', 'Pode ser foto do original ou PDF escaneado.');
+  else if(/certificado/.test(t)) l.push('Certificado do curso anterior, <b>frente e verso</b>, legível e inteiro.');
+  else l.push('Envie o documento inteiro e legível, em local claro, sem cortes e sem reflexo.');
+  return '<b>Como enviar este documento:</b><ul style="margin:6px 0 0 18px;padding:0">' + l.map(x => '<li>' + x + '</li>').join('') + '</ul>';
+}
 function modalEnvio(tipo){
   S.arqsEnvio = [];
   const tipos = todosTiposDoc();
   abrirModal('Enviar documento',
-    '<label class="f"><span>Documento</span><select id="enTipo">'+tipos.map(t => '<option'+(t === tipo ? ' selected' : '')+'>'+esc(t)+'</option>').join('')+'</select></label>'+
+    '<label class="f"><span>Documento</span><select id="enTipo" onchange="$(\'#enDica\').innerHTML=dicaDoc(this.value)">'+tipos.map(t => '<option'+(t === tipo ? ' selected' : '')+'>'+esc(t)+'</option>').join('')+'</select></label>'+
+    '<div id="enDica" class="aviso" style="margin:0 0 10px">'+dicaDoc(tipo || tipos[0])+'</div>'+
     '<div class="f" style="margin-bottom:10px"><span class="small muted">Arquivo (foto ou PDF, até 10 MB)</span><div class="bar" style="margin:4px 0 4px"><button type="button" class="btn nv" onclick="document.getElementById(\'enCam\').click()">📷 Tirar foto</button><button type="button" class="btn sec" onclick="document.getElementById(\'enArq\').click()">Escolher arquivo(s)</button></div><div id="enNome" class="small" style="color:var(--ok)"></div>'+
     '<input id="enCam" type="file" accept="image/*" capture="environment" style="display:none" onchange="escolherArq(this)"><input id="enArq" type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="escolherArq(this)"></div>'+
     '<label class="f"><span>Validade do documento (certidões, atestados, laudos)</span><input id="enVal" type="date"></label>'+
-    '<p class="small muted">Dica: fotografe o documento inteiro, em local claro, sem cortes e sem reflexo. RG e CNH: uma foto da frente e outra do verso. Informando a validade, você recebe aviso antes de vencer.</p>',
+    '<p class="small muted">Informando a validade, você recebe aviso antes de vencer.</p>',
     '<button class="btn" onclick="enviarDocumento(this)">Enviar</button>');
 }
 async function enviarDocumento(btn){
@@ -1020,6 +1036,12 @@ async function cancelarSolicitacao(id){
   if(!confirm('Cancelar esta pré-matrícula?')) return;
   await q(sb.from('solicitacoes').update({ status: 'cancelada' }).eq('id', id)); recarregar();
 }
+const exigeValidade = d => /^cnd\b/i.test(String(d && d.tipo || ''));
+function cndSemValidade(ids){
+  const l = ids.map(id => S.pessoa.docs.find(x => x.id === id)).filter(d => d && exigeValidade(d) && !d.validade);
+  if(l.length) alert('Certidão (CND) só pode ser aprovada com a data de validade.\n\n' + l.map(d => '• ' + d.tipo).join('\n') + '\n\nAbra o documento em "Ver", informe a validade e aprove.');
+  return l;
+}
 function confirmaValidade(ids){
   const hoje = hojeISO(), l = ids.map(id => S.pessoa.docs.find(x => x.id === id)).filter(d => d && d.validade);
   const venc = l.filter(d => d.validade < hoje), logo = l.filter(d => d.validade >= hoje && d.validade <= addDias(hoje, 30));
@@ -1028,6 +1050,7 @@ function confirmaValidade(ids){
   return true;
 }
 async function analisarDoc(id, status, motivo){
+  if(status === 'aprovado' && cndSemValidade([id]).length){ const d = S.pessoa.docs.find(x => x.id === id); if(d) verArquivo(d.arquivo_path, d.id); return; }
   if(status === 'aprovado' && !confirmaValidade([id])) return;
   await q(sb.from('documentos').update({ status, motivo: motivo || null }).eq('id', id));
   toast(status === 'aprovado' ? 'Documento aprovado.' : 'Documento recusado.'); recarregar();
@@ -2120,7 +2143,34 @@ async function vPainel(){
     k('Turmas abertas', turmasAnd, 'turmas')+
     k('Cursos vencidos ou vencendo em 30 dias', venc30, 'vencimentos', 'var(--bad)')+
     k('Pessoas cadastradas', pessoas, 'pessoas')+
-    '</div>'+await blocoIndicadores()+await blocoGraficos()+'<div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
+    '</div>'+await blocoParadas()+await blocoIndicadores()+await blocoGraficos()+'<div class="card"><h3>Link do portal</h3><p class="small muted">Envie este link para alunos e empresas criarem a conta:</p><div class="bar"><input readonly value="'+esc(linkPortal())+'" onclick="this.select()"><button class="btn sec" onclick="navigator.clipboard.writeText(\''+esc(linkPortal())+'\');toast(\'Link copiado.\')">Copiar</button></div></div>';
+}
+/* pré-matrículas que não andam: o que falta de cada aluno, com mensagem pronta */
+async function blocoParadas(){
+  const eid = S.perfil.escola_id;
+  const sols = await q(sb.from('solicitacoes').select('id,pessoa_id,status,criado_em,obs_escola,pessoas(nome,telefone,email),cursos(sigla,nome,docs_exigidos)').eq('escola_id', eid).in('status', ['rascunho','pendente']).order('criado_em'));
+  if(!sols.length) return '';
+  const pids = [...new Set(sols.map(s => s.pessoa_id))];
+  const docs = await buscarTodos(() => sb.from('documentos').select('pessoa_id,tipo,status,validade,enviado_em').in('pessoa_id', pids).order('enviado_em', { ascending: false }));
+  const hoje = hojeISO();
+  const linhas = sols.map(s => {
+    const meus = docs.filter(d => d.pessoa_id === s.pessoa_id), atual = t => meus.find(d => d.tipo === t);
+    const req = parseDocs(s.cursos).filter(x => !x.opcional);
+    const falta = req.filter(x => { const d = atual(x.nome); return !d || d.status === 'recusado' || (d.validade && d.validade < hoje); }).map(x => x.nome);
+    const analise = req.filter(x => { const d = atual(x.nome); return d && d.status === 'enviado'; }).length;
+    const ult = meus.length ? meus[0].enviado_em : s.criado_em, parado = Math.max(0, Math.floor((Date.now() - new Date(ult)) / 864e5));
+    return { s, falta, analise, total: req.length, parado };
+  }).sort((a, b) => a.falta.length - b.falta.length || b.parado - a.parado);
+  const p = x => x.s.pessoas || {};
+  let h = '<div class="card"><h3>Pré-matrículas paradas <span class="muted">('+linhas.length+')</span></h3><p class="small muted" style="margin:0 0 8px">Alunos que ainda não enviaram a pré-matrícula para análise. Os mais perto de terminar aparecem primeiro. O aluno também recebe lembrete automático por e-mail a cada 3 dias.</p>'+
+    '<div class="tw"><table><tr><th>Aluno</th><th>Curso</th><th>Documentos</th><th>Sem movimento</th><th></th></tr>'+linhas.map(x => {
+      const ok = x.total - x.falta.length, pct = x.total ? Math.round(100 * ok / x.total) : 0, nome = (p(x).nome || '').split(' ')[0];
+      const msg = 'Olá, ' + nome + '! Sua pré-matrícula no curso ' + (x.s.cursos || {}).sigla + ' está quase lá.' + (x.falta.length ? '\n\nFaltam estes documentos:\n' + x.falta.map(f => '• ' + f).join('\n') + '\n\nEnvie pelo portal (fotos inteiras e legíveis; certidões em PDF baixado do site).' : '\n\nTodos os documentos já foram enviados. Entre no portal e clique em "Enviar para análise".') + assinatura();
+      return '<tr><td><a href="#" onclick="go(\'pessoa\',\''+x.s.pessoa_id+'\');return false"><b>'+esc(p(x).nome || '—')+'</b></a>'+(x.s.status === 'pendente' ? ' <span class="bdg bad">com pendência</span>' : '')+'</td><td>'+esc((x.s.cursos || {}).sigla || '')+'</td>'+
+        '<td style="min-width:170px"><div style="background:#e6e3dc;border-radius:4px;height:8px;overflow:hidden"><div style="width:'+pct+'%;height:8px;background:'+(pct >= 80 ? 'var(--ok)' : 'var(--or)')+'"></div></div><div class="small" '+(x.falta.length ? 'title="'+esc('Faltam: ' + x.falta.join(', '))+'"' : '')+'>'+ok+' de '+x.total+(x.falta.length ? ' · faltam '+x.falta.length : ' · <b style="color:var(--ok)">completo, falta enviar</b>')+(x.analise ? ' · '+x.analise+' em análise' : '')+'</div></td>'+
+        '<td class="small">'+(x.parado ? x.parado + ' dia(s)' : 'hoje')+'</td><td style="white-space:nowrap">'+botoesContato({ id: x.s.pessoa_id, telefone: p(x).telefone, email: p(x).email }, 'Sua pré-matrícula — documentos pendentes', msg)+'</td></tr>';
+    }).join('')+'</table></div></div>';
+  return h;
 }
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 function graficoVencimentos(meses){
