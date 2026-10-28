@@ -129,7 +129,7 @@ const CONFIG = {
   ESCOLA: 'rondon',                                 // identificador da escola (tabela escolas.slug)
   GOOGLE_CLIENT_ID: '79884176867-ig5o7ukfqlogrikhp1bf3666tlh5gunv.apps.googleusercontent.com'  // público (login com Google)
 };
-const VERSAO = '1.27.0';
+const VERSAO = '1.27.1';
 
 /* ================= UTILITÁRIOS ================= */
 const $ = s => document.querySelector(s);
@@ -2337,13 +2337,37 @@ async function vAnalise(){
   return h;
 }
 async function vPessoas(){
-  const t = S.busca.trim().replace(/[,()%]/g, ' ');
-  let consulta = sb.from('pessoas').select('id,nome,cpf,telefone,empresa_id,usuario_id').eq('escola_id', S.perfil.escola_id).order('nome').limit(100);
-  if(t){ const d = soDig(t); consulta = d.length >= 3 && d.length === t.replace(/\D/g, '').length && !/[a-z]/i.test(t) ? consulta.ilike('cpf', '%' + d + '%') : consulta.ilike('nome', '%' + t + '%'); }
+  if(!S.empresas) await carregarEmpresas();
+  S.fPes = S.fPes || { emp: '', conta: '' };
+  const f = S.fPes, t = S.busca.trim().replace(/[,()%*"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  let consulta = sb.from('pessoas').select('id,nome,cpf,telefone,email,empresa_id,usuario_id').eq('escola_id', S.perfil.escola_id).order('nome').limit(300);
+  if(t){
+    const d = soDig(t);
+    if(d.length >= 3 && !/[a-z@]/i.test(t)) consulta = consulta.or('cpf.ilike."%' + d + '%",telefone.ilike."%' + d.split('').join('%') + '%"');
+    else consulta = consulta.or('nome.ilike."%' + t + '%",email.ilike."%' + t + '%"');
+  }
+  if(f.emp === '_part') consulta = consulta.is('empresa_id', null);
+  else if(f.emp) consulta = consulta.eq('empresa_id', f.emp);
+  if(f.conta === 'com') consulta = consulta.not('usuario_id', 'is', null);
+  else if(f.conta === 'sem') consulta = consulta.is('usuario_id', null);
   const lista = await q(consulta);
+  const emps = Object.values(S.empresas || {}).sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+  const filtrando = t || f.emp || f.conta;
+  const opt = (v, txt, atual) => '<option value="'+esc(v)+'"'+(v === atual ? ' selected' : '')+'>'+esc(txt)+'</option>';
   return '<div class="bar"><h2 style="margin:0">Pessoas</h2><span class="sp"></span><button class="btn" onclick="modalNovaPessoa(\'\')">+ Cadastro no balcão</button></div>'+
-    '<div class="card"><div class="bar"><input id="bPes" placeholder="Buscar por nome ou CPF" value="'+esc(S.busca)+'" onkeydown="if(event.key===\'Enter\'){S.busca=this.value;recarregar()}" style="flex:1"><button class="btn nv" onclick="S.busca=document.getElementById(\'bPes\').value;recarregar()">Buscar</button></div>'+
-    (lista.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Origem</th></tr>'+lista.map(p => '<tr class="click" onclick="go(\'pessoa\',\''+p.id+'\')"><td><b>'+esc(p.nome)+'</b></td><td>'+fmtDoc(p.cpf)+'</td><td>'+esc(p.telefone || '—')+'</td><td class="small">'+(p.usuario_id ? 'Conta própria' : p.empresa_id && S.empresas[p.empresa_id] ? esc(S.empresas[p.empresa_id].nome) : 'Balcão')+'</td></tr>').join('')+'</table></div>'+(lista.length === 100 ? '<p class="small muted">Mostrando os 100 primeiros. Refine a busca.</p>' : '') : '<p class="muted">Ninguém encontrado.</p>')+'</div>';
+    '<div class="card"><div class="bar" style="margin-top:0;flex-wrap:wrap">'+
+    '<input id="bPes" placeholder="Nome, CPF, telefone ou e-mail" value="'+esc(S.busca)+'" onkeydown="if(event.key===\'Enter\'){S.busca=this.value;recarregar()}" style="flex:2 1 220px">'+
+    '<select style="flex:1 1 200px" onchange="S.fPes.emp=this.value;S.busca=$(\'#bPes\').value;recarregar()" title="Filtrar pela empresa">'+opt('', 'Todas as empresas', f.emp)+opt('_part', 'Particulares (sem empresa)', f.emp)+emps.map(e => opt(e.id, e.nome, f.emp)).join('')+'</select>'+
+    '<select style="flex:0 1 190px" onchange="S.fPes.conta=this.value;S.busca=$(\'#bPes\').value;recarregar()" title="Filtrar por acesso ao portal">'+opt('', 'Com e sem acesso', f.conta)+opt('com', 'Com acesso ao portal', f.conta)+opt('sem', 'Sem acesso (balcão)', f.conta)+'</select>'+
+    '<button class="btn nv" onclick="S.busca=document.getElementById(\'bPes\').value;recarregar()">Buscar</button>'+
+    (filtrando ? '<button class="btn sec" onclick="S.busca=\'\';S.fPes={emp:\'\',conta:\'\'};recarregar()">Limpar</button>' : '')+'</div>'+
+    '<p class="small muted" style="margin:0 0 8px">'+lista.length+(lista.length === 300 ? '+' : '')+' pessoa(s)'+(filtrando ? ' com esse filtro' : '')+'.</p>'+
+    (lista.length ? '<div class="tw"><table><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Empresa</th><th>Portal</th></tr>'+lista.map(p => {
+      const emp = p.empresa_id && S.empresas[p.empresa_id];
+      return '<tr class="click" onclick="go(\'pessoa\',\''+p.id+'\')"><td><b>'+esc(p.nome)+'</b>'+(p.email ? '<div class="small muted">'+esc(p.email)+'</div>' : '')+'</td><td>'+fmtDoc(p.cpf)+'</td><td>'+esc(p.telefone || '—')+'</td>'+
+        '<td class="small">'+(emp ? '<a href="#" onclick="event.stopPropagation();S.fPes.emp=\''+p.empresa_id+'\';S.busca=\'\';recarregar();return false" title="Ver todos desta empresa">'+esc(emp.nome)+'</a>' : '<span class="muted">Particular</span>')+'</td>'+
+        '<td class="small">'+(p.usuario_id ? '<span class="bdg ok">Com acesso</span>' : '<span class="bdg">Balcão</span>')+'</td></tr>';
+    }).join('')+'</table></div>'+(lista.length === 300 ? '<p class="small muted">Mostrando as 300 primeiras. Refine a busca.</p>' : '') : '<p class="muted">Ninguém encontrado.</p>')+'</div>';
 }
 async function vEmpresas(){
   await carregarEmpresas();
